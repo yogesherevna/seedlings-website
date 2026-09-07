@@ -3,10 +3,10 @@
 import { useEffect, useRef, type ReactNode } from 'react';
 import { cmsCollections, getPublishedByField, getPublishedCollection, getDocById } from '@/lib/cms';
 
-type Page = 'home'|'microgreens'|'product'|'journey'|'contact'|'account'|'cart'|'checkout'|'success';
-const text = (el: Element | null, value: unknown) => { if (el && typeof value === 'string' && value.trim()) el.textContent = value; };
-const attr = (el: Element | null, name: string, value: unknown) => { if (el && typeof value === 'string' && value.trim()) el.setAttribute(name, value); };
-const image = (el: Element | null, value: unknown) => { if (el && typeof value === 'string' && value.trim()) attr(el, 'src', value); };
+export type Page = 'home'|'microgreens'|'product'|'journey'|'contact'|'account'|'cart'|'checkout'|'success';
+const text = (el: Element | null | undefined, value: unknown) => { if (el && typeof value === 'string' && value.trim()) el.textContent = value; };
+const attr = (el: Element | null | undefined, name: string, value: unknown) => { if (el && typeof value === 'string' && value.trim()) el.setAttribute(name, value); };
+const image = (el: Element | null | undefined, value: unknown) => { if (el && typeof value === 'string' && value.trim()) attr(el, 'src', value); };
 const applySeo = (title: unknown, description: unknown) => {
   if (typeof title === 'string' && title.trim()) document.title = title.trim();
   if (typeof description === 'string' && description.trim()) {

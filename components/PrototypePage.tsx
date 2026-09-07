@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import CmsHydrator from './CmsHydrator';
+import type { Page } from './CmsHydrator';
 
 const pages: Record<string,string> = {
   home: 'index.html', microgreens: 'microgreens.html', product: 'product.html', journey: 'journey.html',
@@ -27,5 +28,5 @@ export default function PrototypePage({ page }: { page: keyof typeof pages }) {
   const source = fs.readFileSync(file, 'utf8');
   const body = source.match(/<body[^>]*>([\s\S]*)<\/body>/i)?.[1] ?? source;
   const html = rewriteLinks(body.replace(/<script[^>]*>[\s\S]*?<\/script>/gi, ''));
-  return <CmsHydrator page={page}><div dangerouslySetInnerHTML={{ __html: html }} /></CmsHydrator>;
+  return <CmsHydrator page={page as Page}><div dangerouslySetInnerHTML={{ __html: html }} /></CmsHydrator>;
 }

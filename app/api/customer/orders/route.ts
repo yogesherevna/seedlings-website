@@ -50,8 +50,10 @@ export async function POST(request: NextRequest) {
     const address = addresses.find((item: Record<string, unknown>) => String(item?.id ?? '') === addressId);
     if (!address) return NextResponse.json({ error: 'Selected delivery address was not found.' }, { status: 400 });
 
-    const productRefs = requestedItems.map((item: Record<string, unknown>) => cleanString(item.productId)).filter(Boolean);
-    const uniqueIds = [...new Set(productRefs)];
+    const productRefs: string[] = requestedItems
+      .map((item: Record<string, unknown>) => cleanString(item.productId))
+      .filter(Boolean) as string[];
+    const uniqueIds: string[] = [...new Set(productRefs)];
     if (uniqueIds.length !== productRefs.length) return NextResponse.json({ error: 'Duplicate cart items are not allowed.' }, { status: 400 });
 
     const products = await Promise.all(uniqueIds.map(async (id) => {

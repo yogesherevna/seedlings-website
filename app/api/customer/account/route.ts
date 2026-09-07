@@ -20,6 +20,16 @@ function dateValue(value: unknown) {
   return '';
 }
 
+type SubscriptionRecord = {
+  id: string;
+  status?: unknown;
+  nextDeliveryDate?: unknown;
+  productName?: unknown;
+  weightGrams?: unknown;
+  quantity?: unknown;
+  deliveryAddress?: unknown;
+};
+
 export async function GET(request: NextRequest) {
   try {
     const authorization = request.headers.get('authorization') || '';
@@ -41,7 +51,7 @@ export async function GET(request: NextRequest) {
       adminDb.collection('orders').where('customerId', '==', mobile).get(),
     ]);
 
-    const subscriptions = subscriptionsSnap.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
+    const subscriptions: SubscriptionRecord[] = subscriptionsSnap.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
     const orders = ordersSnap.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
     const activeSubscriptions = subscriptions.filter((item) => String(item.status) === 'active');
     const upcoming = activeSubscriptions

@@ -158,14 +158,17 @@ export default function SubscriptionHydrator({ children }: { children: React.Rea
           ${plansHtml}
           ${myHtml}`;
 
-        root.querySelectorAll("[data-choose]").forEach((b) => b.addEventListener("click", () => {
+        const rootEl = ref.current;
+        if (!rootEl) return;
+
+        rootEl.querySelectorAll("[data-choose]").forEach((b) => b.addEventListener("click", () => {
           const id = (b as HTMLElement).dataset.choose || "";
           sessionStorage.setItem("seedlings_subscription_plan", id);
           void load();
           message("Plan selected.");
         }));
 
-        root.querySelectorAll("[data-status]").forEach((b) => b.addEventListener("click", async () => {
+        rootEl.querySelectorAll("[data-status]").forEach((b) => b.addEventListener("click", async () => {
           const el = b as HTMLButtonElement;
           el.disabled = true;
           try {
@@ -182,14 +185,14 @@ export default function SubscriptionHydrator({ children }: { children: React.Rea
           }
         }));
 
-        root.querySelector("[data-create]")?.addEventListener("click", async () => {
+        rootEl.querySelector("[data-create]")?.addEventListener("click", async () => {
           const planId = sessionStorage.getItem("seedlings_subscription_plan") || "";
-          const addressId = (root.querySelector("[data-address]") as HTMLSelectElement | null)?.value || "";
-          const quantity = Number((root.querySelector("[data-quantity]") as HTMLInputElement | null)?.value || 1);
-          const startDate = (root.querySelector("[data-start]") as HTMLInputElement | null)?.value || "";
+          const addressId = (rootEl.querySelector("[data-address]") as HTMLSelectElement | null)?.value || "";
+          const quantity = Number((rootEl.querySelector("[data-quantity]") as HTMLInputElement | null)?.value || 1);
+          const startDate = (rootEl.querySelector("[data-start]") as HTMLInputElement | null)?.value || "";
           if (!planId) return message("Choose a subscription plan first.", true);
           if (!addressId) return message("Add a delivery address in My Account first.", true);
-          const button = root.querySelector("[data-create]") as HTMLButtonElement;
+          const button = rootEl.querySelector("[data-create]") as HTMLButtonElement;
           button.disabled = true;
           button.textContent = "Creating…";
           try {
