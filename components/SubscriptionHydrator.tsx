@@ -1,7 +1,9 @@
 "use client";
 
 import { useEffect, useRef } from "react";
-import { auth } from "@/lib/firebase";
+import { onAuthStateChanged } from "firebase/auth";
+import { collection, getDocs, query, where } from "firebase/firestore";
+import { auth, db } from "@/lib/firebase";
 import { getStoredCustomerMobile } from "@/lib/clientOnboarding";
 import { getCustomerAccount, type CustomerAddress } from "@/lib/customerAccount";
 
@@ -59,28 +61,37 @@ export default function SubscriptionHydrator({ children }: { children: React.Rea
       if (el) { el.textContent = text; el.style.color = error ? "crimson" : ""; }
     };
 
-    async function load() {
+    const renderSignedOut = () => {
+      const m = main();
+      if (m) m.innerHTML = `<div class="account-title"><div><div class="eyebrow">Subscriptions</div><h1>My Subscription</h1><p class="muted">Sign in to manage your recurring microgreens plan.</p></div></div><div class="panel"><h3>Sign in to continue</h3><p class="muted">Use your mobile number and OTP from the Account page.</p><a class="btn primary" href="/account">Go to Account</a></div>`;
+    };
+
+    const renderLoading = () => {
+      const m = main();
+      if (m) m.innerHTML = `<div class="account-title"><div><div class="eyebrow">Subscriptions</div><h1>My Subscription</h1><p class="muted">Loading your subscription details…</p></div></div><div class="panel"><p class="muted">Please wait while we load your account.</p></div>`;
+    };
+
+    async function load(userPresent = Boolean(auth.currentUser)) {
       const mobile = getStoredCustomerMobile();
-      if (!mobile || !auth.currentUser) {
-        const m = main();
-        if (m) m.innerHTML = `<div class="account-title"><div><div class="eyebrow">Subscriptions</div><h1>My Subscription</h1><p class="muted">Sign in to manage your recurring microgreens plan.</p></div></div><div class="panel"><h3>Sign in to continue</h3><p class="muted">Use your mobile number and OTP from the Account page.</p><a class="btn primary" href="/account">Go to Account</a></div>`;
+      if (!userPresent || !mobile) {
+        renderSignedOut();
         return;
       }
 
       try {
-        const [plansResponse, subsResponse, account] = await Promise.all([
-          api("/api/customer/subscription-plans"),
-          api(`/api/customer/subscriptions?mobile=${encodeURIComponent(mobile)}`),
+        // Customer website reads shared Firestore data through its own Firebase
+        // Web SDK. This keeps customer reads independent from the Admin Portal
+        // API and avoids requiring Firebase Admin credentials in the website.
+        const [plansSnapshot, subsSnapshot, account] = await Promise.all([
+          getDocs(query(collection(db, "subscriptionPlans"), where("active", "==", true))),
+          getDocs(query(collection(db, "subscriptions"), where("customerId", "==", mobile))),
           getCustomerAccount(mobile),
         ]);
 
-        const plansData = await plansResponse.json();
-        const subsData = await subsResponse.json();
-        if (!plansResponse.ok) throw new Error(plansData.error || "Unable to load plans.");
-        if (!subsResponse.ok) throw new Error(subsData.error || "Unable to load subscriptions.");
-
-        const plans = plansData.plans || [];
-        const subs = subsData.subscriptions || [];
+        const plans = plansSnapshot.docs
+          .map((doc) => ({ id: doc.id, ...doc.data() }))
+          .filter((p: any) => ["monthly", "quarterly"].includes(String(p.frequency)));
+        const subs = subsSnapshot.docs.map((doc): Record<string, unknown> => ({ id: doc.id, ...(doc.data() as Record<string, unknown>) }));
         const addresses = account?.addresses || [];
 
         let selectedProduct: any = null;
@@ -94,7 +105,7 @@ export default function SubscriptionHydrator({ children }: { children: React.Rea
 
         const plansHtml = renderPlans(plans, selectedPlanId);
 
-        const active = subs.find((s: any) => s.status === "active") || subs[0];
+        const active = (subs.find((s: any) => s.status === "active") || subs[0]) as Record<string, unknown> | undefined;
         const currentHtml = active ? `
           <div class="panel">
             <h3>${esc(active.productName)}</h3>
@@ -206,6 +217,10 @@ export default function SubscriptionHydrator({ children }: { children: React.Rea
             if (!r.ok) throw new Error(data.error || "Unable to create subscription.");
             sessionStorage.removeItem("seedlings_subscription_product");
             sessionStorage.removeItem("seedlings_subscription_plan");
+            // A subscription is created from the selected product; do not leave
+            // the cart's subscription mode/plan state suggesting it is pending.
+            localStorage.removeItem(`seedlings_cart_mode_${selectedProduct.productId}`);
+            localStorage.removeItem(`seedlings_cart_plan_${selectedProduct.productId}`);
             await load();
             message(`Subscription ${data.subscriptionNumber} created.`);
           } catch (e) {
@@ -222,8 +237,16 @@ export default function SubscriptionHydrator({ children }: { children: React.Rea
       }
     }
 
-    void load();
-    return () => { dead = true; };
+    renderLoading();
+    const unsubscribe = onAuthStateChanged(auth, (user) => {
+      if (dead) return;
+      void load(Boolean(user));
+    });
+
+    return () => {
+      dead = true;
+      unsubscribe();
+    };
   }, []);
 
   return <div ref={ref}>{children}</div>;

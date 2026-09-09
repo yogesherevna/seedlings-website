@@ -156,8 +156,10 @@ function renderAddresses(root: HTMLElement, mobile: string, addresses: Address[]
       submit.disabled = true; submit.textContent = 'Saving…'; setMessage('');
       const body = Object.fromEntries(new FormData(form).entries()) as Record<string, string>;
       const updated: Address = { id: address?.id || crypto.randomUUID(), label: body.label?.trim() || 'Home', name: body.name?.trim() || '', mobileNumber: body.mobileNumber?.replace(/\D/g, '') || '', addressLine1: body.addressLine1?.trim() || '', addressLine2: body.addressLine2?.trim() || undefined, landmark: body.landmark?.trim() || undefined, city: body.city?.trim() || '', state: body.state?.trim() || '', pincode: body.pincode?.trim() || '' };
-      if (!/^\d{10}$/.test(updated.mobileNumber)) { setMessage('Enter a valid 10-digit mobile number.', true); submit.disabled = false; submit.textContent = address ? 'Save changes' : 'Add address'; return; }
-      if (!updated.name || !updated.addressLine1 || !updated.city || !updated.state || !/^\d{6}$/.test(updated.pincode)) { setMessage('Please complete all required address fields.', true); submit.disabled = false; submit.textContent = address ? 'Save changes' : 'Add address'; return; }
+      const mobileNumber = updated.mobileNumber ?? '';
+      const pincode = updated.pincode ?? '';
+      if (!/^\d{10}$/.test(mobileNumber)) { setMessage('Enter a valid 10-digit mobile number.', true); submit.disabled = false; submit.textContent = address ? 'Save changes' : 'Add address'; return; }
+      if (!updated.name || !updated.addressLine1 || !updated.city || !updated.state || !/^\d{6}$/.test(pincode)) { setMessage('Please complete all required address fields.', true); submit.disabled = false; submit.textContent = address ? 'Save changes' : 'Add address'; return; }
       const next = address ? addresses.map(item => item.id === address.id ? updated : item) : [...addresses, updated];
       try { await updateCustomerAddresses(mobile, next); writeAddressCache(mobile, next); formWrap.remove(); renderAddresses(root, mobile, next); setMessage(address ? 'Address updated.' : 'Address added.'); }
       catch (error) { setMessage(error instanceof Error ? error.message : 'Unable to save address.', true); submit.disabled = false; submit.textContent = address ? 'Save changes' : 'Add address'; }

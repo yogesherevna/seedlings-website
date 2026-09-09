@@ -15,13 +15,29 @@ const money = (value: number, currency = 'INR') => {
   catch { return `₹${value}`; }
 };
 
-const slugFor = (p: SalesProduct) => p.slug?.trim() || p.id;
+const slugify = (value: string) => value
+  .normalize('NFKD')
+  .replace(/[\u0300-\u036f]/g, '')
+  .toLowerCase()
+  .trim()
+  .replace(/[^a-z0-9]+/g, '-')
+  .replace(/^-+|-+$/g, '');
+
+const slugFor = (p: SalesProduct) => slugify(p.slug?.trim() || p.name?.trim() || p.id) || p.id;
+const isPlaceholderDescription = (value: string) => ['dsds', 'dssd', 'test', 'test description'].includes(value.trim().toLowerCase());
+const descriptionFor = (p: SalesProduct) => {
+  const description = p.description?.trim() || '';
+  const short = p.shortDescription?.trim() || '';
+  if (description && !isPlaceholderDescription(description)) return description;
+  if (short && !isPlaceholderDescription(short)) return short;
+  return 'Freshly grown microgreens, harvested with care and prepared for delivery.';
+};
 
 function card(product: SalesProduct) {
   const href = `/product/${encodeURIComponent(slugFor(product))}`;
   const image = product.imageUrl?.trim();
   const badge = product.featured ? 'Featured' : 'Fresh';
-  const description = product.shortDescription?.trim() || product.description?.trim() || 'Freshly grown and prepared for delivery.';
+  const description = descriptionFor(product);
   return `<article class="card"><a href="${esc(href)}" aria-label="View ${esc(product.name)}"><div class="product-art"${image ? ` style="background-image:url('${esc(image)}');background-size:cover;background-position:center"` : ''}><span class="badge">${badge}</span></div></a><div class="product-body"><span class="tag">${product.type === 'multiple' ? 'Salable combo' : 'Fresh microgreen'}</span><h3>${esc(product.name)}</h3><p>${esc(description)}</p><div class="product-foot"><span class="price">${esc(money(Number(product.sellingPrice ?? 0), product.currency || 'INR'))}</span><a class="mini" href="${esc(href)}">Details</a></div></div></article>`;
 }
 
@@ -54,8 +70,14 @@ function applyMicrogreens(root: HTMLElement, products: SalesProduct[]) {
 
 function applyProduct(root: HTMLElement, products: SalesProduct[], slug: string) {
   const decoded = decodeURIComponent(slug);
-  const product = products.find((p) => slugFor(p) === decoded || p.id === decoded);
+  const normalizedRequested = slugify(decoded);
+  const product = products.find((p) => slugFor(p) === normalizedRequested || p.slug?.trim() === decoded || p.id === decoded);
   if (!product) { renderError(root, true); return; }
+
+  const canonicalSlug = slugFor(product);
+  if (typeof window !== 'undefined' && decoded !== canonicalSlug) {
+    window.history.replaceState(null, '', `/product/${encodeURIComponent(canonicalSlug)}`);
+  }
 
   const image = product.imageUrl?.trim();
   const art = root.querySelector('.detail-art') as HTMLElement | null;
@@ -70,10 +92,15 @@ function applyProduct(root: HTMLElement, products: SalesProduct[], slug: string)
   if (tag) tag.textContent = product.type === 'multiple' ? 'Salable combo' : 'Fresh microgreen';
   const title = root.querySelector('.detail h1');
   if (title) title.textContent = product.name;
+
+  const breadcrumbs = root.querySelector('.breadcrumbs');
+  if (breadcrumbs) {
+    breadcrumbs.innerHTML = `<a href="/">Home</a> / <a href="/microgreens">Microgreens</a> / ${esc(product.name)}`;
+  }
   const rating = root.querySelector('.rating');
   if (rating) rating.textContent = product.featured ? 'Featured · Fresh availability' : 'Fresh availability';
   const description = root.querySelector('.detail p.muted');
-  if (description) description.textContent = product.description?.trim() || product.shortDescription?.trim() || 'Freshly grown and prepared for delivery.';
+  if (description) description.textContent = descriptionFor(product);
   const price = root.querySelector('.detail-price');
   if (price) price.textContent = money(Number(product.sellingPrice ?? 0), product.currency || 'INR');
 
@@ -108,7 +135,7 @@ function applyProduct(root: HTMLElement, products: SalesProduct[], slug: string)
     };
     addButton?.addEventListener('click', () => add(false));
     buyButton?.addEventListener('click', () => add(true));
-    subscribeButton?.addEventListener('click', () => { sessionStorage.setItem('seedlings_subscription_product', JSON.stringify({ productId: product.id, quantity: getQty() })); window.location.href = '/subscriptions'; });
+    subscribeButton?.addEventListener('click', () => { sessionStorage.setItem('seedlings_subscription_product', JSON.stringify({ productId: product.id, name: product.name, quantity: getQty() })); window.location.href = '/subscriptions'; });
   }
 }
 

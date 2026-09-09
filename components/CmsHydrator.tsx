@@ -184,6 +184,39 @@ async function getCachedFaqs(): Promise<Record<string, unknown>[]> {
   }
 }
 
+function initializeMobileNavigation(root: HTMLElement) {
+  const menu = root.querySelector<HTMLButtonElement>('.menu');
+  const nav = root.querySelector<HTMLElement>('.nav');
+  if (!menu || !nav) return;
+
+  const setOpen = (open: boolean) => {
+    nav.classList.toggle('open', open);
+    menu.setAttribute('aria-expanded', String(open));
+    menu.setAttribute('aria-label', open ? 'Close navigation' : 'Open navigation');
+  };
+
+  // The prototype HTML scripts are intentionally stripped by PrototypePage,
+  // so the mobile menu must be wired from the React hydration layer.
+  menu.onclick = () => setOpen(!nav.classList.contains('open'));
+  nav.querySelectorAll('a').forEach((link) => {
+    link.onclick = () => setOpen(false);
+  });
+
+  // Close the drawer when tapping outside it.
+  root.ownerDocument.addEventListener('click', (event) => {
+    const target = event.target as Node | null;
+    if (!target || !nav.classList.contains('open')) return;
+    if (!nav.contains(target) && !menu.contains(target)) setOpen(false);
+  });
+
+  // Keep the drawer closed when switching back to desktop width.
+  const media = root.ownerDocument.defaultView?.matchMedia('(min-width: 701px)');
+  const handleViewportChange = (event: MediaQueryListEvent) => {
+    if (event.matches) setOpen(false);
+  };
+  media?.addEventListener?.('change', handleViewportChange);
+}
+
 function applyNavigation(root: HTMLElement, items: Array<Record<string, unknown>>) {
   const byKey = new Map(items.map((x) => [String(x.navKey ?? ''), x]));
   const map: Array<[string, string]> = [
@@ -207,6 +240,7 @@ async function applyCommon(root: HTMLElement) {
     getDocById<Record<string, unknown>>(cmsCollections.siteSettings, 'site'),
   ]);
   applyNavigation(root, nav);
+  initializeMobileNavigation(root);
   if (settings) {
     text(root.querySelector('.footer-bottom span:first-child'), `© 2026 ${String(settings.siteName ?? '')}`.trim());
     text(root.querySelector('.footer-bottom span:last-child'), settings.tagline);

@@ -1,4 +1,11 @@
 export const CART_STORAGE_KEY = 'seedlings_cart';
+const CUSTOMER_CART_STORAGE_PREFIX = 'seedlings_cart:';
+
+function activeCartStorageKey(): string {
+  if (typeof window === 'undefined') return CART_STORAGE_KEY;
+  const mobile = window.localStorage.getItem('seedlings_customer_mobile') || '';
+  return mobile ? `${CUSTOMER_CART_STORAGE_PREFIX}${mobile}` : `${CUSTOMER_CART_STORAGE_PREFIX}guest`;
+}
 export type CartItem = {
   productId: string;
   slug: string;
@@ -28,11 +35,27 @@ function safeParse(value: string | null): CartItem[] {
 
 export function getCart(): CartItem[] {
   if (typeof window === 'undefined') return [];
-  return safeParse(localStorage.getItem(CART_STORAGE_KEY));
+  const key = activeCartStorageKey();
+  const stored = localStorage.getItem(key);
+  if (stored !== null) return safeParse(stored);
+
+  // The legacy cart is only migrated to the guest cart. Never copy it into
+  // a customer account, because it may belong to a different signed-in user.
+  if (key.endsWith(':guest')) {
+    const legacy = localStorage.getItem(CART_STORAGE_KEY);
+    if (legacy !== null) {
+      const items = safeParse(legacy);
+      localStorage.setItem(key, JSON.stringify(items));
+      localStorage.removeItem(CART_STORAGE_KEY);
+      return items;
+    }
+  }
+  return [];
 }
 
 export function saveCart(items: CartItem[]) {
-  localStorage.setItem(CART_STORAGE_KEY, JSON.stringify(items));
+  const key = activeCartStorageKey();
+  localStorage.setItem(key, JSON.stringify(items));
   if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('seedlings-cart-updated'));
 }
 
