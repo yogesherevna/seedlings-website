@@ -1,2 +1,6 @@
 import PrototypePage from '@/components/PrototypePage';
-export default function Page() { return <PrototypePage page="addresses" />; }
+import AddressHydrator from '@/components/AddressHydrator';
+
+export default function Page() {
+  return <AddressHydrator><PrototypePage page="addresses" /></AddressHydrator>;
+}

@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, type ReactNode } from 'react';
 import { cmsCollections, getPublishedByField, getPublishedCollection, getDocById } from '@/lib/cms';
+import { getFeaturedProducts, type FeaturedProduct } from '@/lib/products';
 
 export type Page = 'home'|'microgreens'|'product'|'journey'|'contact'|'account'|'cart'|'checkout'|'success';
 const text = (el: Element | null | undefined, value: unknown) => { if (el && typeof value === 'string' && value.trim()) el.textContent = value; };
@@ -16,6 +17,172 @@ const applySeo = (title: unknown, description: unknown) => {
   }
 };
 const esc = (value: unknown) => String(value ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\"/g,'&quot;').replace(/'/g,'&#39;');
+
+const TESTIMONIAL_CACHE_KEY = 'seedlings-cms-testimonials-v1';
+const FAQ_CACHE_KEY = 'seedlings-cms-faq-v1';
+
+function featuredProductMarkup(items: FeaturedProduct[]) {
+  return items.slice().sort((a,b)=>Number(a.sortOrder??0)-Number(b.sortOrder??0)).map(x=>{
+    const imageUrl = Array.isArray(x.imageUrls) && typeof x.imageUrls[0] === 'string' ? x.imageUrls[0] : '';
+    const price = Number(x.price);
+    const art = imageUrl
+      ? `<div class=\"product-art has-image\" style=\"background-image:url('${esc(imageUrl)}');background-size:cover;background-position:center;\"><span class=\"badge\">Featured</span></div>`
+      : `<div class=\"product-art\"><span class=\"badge\">Featured</span></div>`;
+    const priceMarkup = Number.isFinite(price) && price > 0 ? `From ₹${price}` : 'Freshly grown';
+    return `<article class=\"card\">${art}<div class=\"product-body\"><span class=\"tag\">${esc(x.category || 'Microgreen')}</span><h3>${esc(x.name)}</h3><p>${esc(x.shortDescription || x.description || '')}</p><div class=\"product-foot\"><span class=\"price\">${priceMarkup}</span><a class=\"mini\" href=\"microgreens.html\">View details</a></div></div></article>`;
+  }).join('');
+}
+
+function getFeaturedProductsSection(root: HTMLElement): HTMLElement | null {
+  return root.querySelector('.featured-products-section');
+}
+
+function showFeaturedProductPlaceholder(root: HTMLElement) {
+  const section = getFeaturedProductsSection(root);
+  const cards = section?.querySelector('.cards');
+  if (!section || !cards) return;
+  section.hidden = false;
+  section.classList.add('is-loading');
+  cards.innerHTML = Array.from({ length: 4 }, () => `<article class="card product-placeholder" aria-hidden="true"><div class="product-art"><span class="placeholder-product-image"></span></div><div class="product-body"><span class="placeholder-line placeholder-tag"></span><span class="placeholder-line placeholder-product-title"></span><span class="placeholder-line placeholder-product-text"></span><span class="placeholder-line placeholder-product-text short"></span></div></article>`).join('');
+}
+
+function renderFeaturedProducts(root: HTMLElement, items: FeaturedProduct[]) {
+  const section = getFeaturedProductsSection(root);
+  const cards = section?.querySelector('.cards');
+  if (!section || !cards) return;
+  section.classList.remove('is-loading');
+  if (!items.length) {
+    section.hidden = true;
+    cards.innerHTML = '';
+    return;
+  }
+  section.hidden = false;
+  cards.innerHTML = featuredProductMarkup(items);
+}
+
+const STATIC_FAQS = [
+  { question: 'What are microgreens?', answer: 'Microgreens are young edible plants harvested at an early stage. They are fresh, flavourful, and easy to add to everyday meals.' },
+  { question: 'How should I store microgreens?', answer: 'Keep them refrigerated and consume them while they are fresh. Follow the storage instructions provided with your order.' },
+  { question: 'How often are microgreens delivered?', answer: 'For subscriptions, deliveries follow the selected subscription plan and scheduled delivery dates. One-time orders are delivered according to the selected delivery option.' },
+  { question: 'Can I skip or reschedule a subscription delivery?', answer: 'Yes. You can use the delivery calendar in your account to skip or reschedule an eligible upcoming delivery.' },
+];
+
+const STATIC_TESTIMONIALS = [
+  { customerName: 'Priya Sharma', rating: 5, content: 'The microgreens are always fresh, crisp, and packed really well. They have become a regular part of our meals.' },
+  { customerName: 'Rahul Deshmukh', rating: 5, content: 'I love the freshness and quality. The greens arrive looking just like they were harvested that day.' },
+  { customerName: 'Sneha Kulkarni', rating: 5, content: 'The sunflower and broccoli microgreens are my favourites. Great quality and really convenient for everyday meals.' },
+  { customerName: 'Amit Patil', rating: 4, content: 'Very fresh microgreens and good variety. I have been enjoying adding them to salads, sandwiches, and breakfast.' },
+  { customerName: 'Neha Joshi', rating: 5, content: 'Excellent quality and timely delivery. The microgreens make even a simple home-cooked meal feel special.' },
+];
+
+function testimonialMarkup(items: Array<Record<string, unknown>>) {
+  return items.slice().sort((a,b)=>Number(a.sortOrder??0)-Number(b.sortOrder??0)).map(x=>`<article class="testimonial"><div class="stars">${'★'.repeat(Math.max(0,Math.min(5,Number(x.rating??0))))}</div><p class="quote">“${esc(x.content)}”</p><div class="person"><span class="avatar">${String(x.customerName??'?').trim().charAt(0).toUpperCase()}</span><span><strong>${esc(x.customerName)}</strong><br><small class="muted">Seedlings customer</small></span></div></article>`).join('');
+}
+
+function showTestimonialPlaceholder(root: HTMLElement) {
+  const track = root.querySelector('.carousel-track');
+  if (!track || !track.querySelector('.testimonial')) return;
+  track.innerHTML = Array.from({ length: 3 }, () => '<article class="testimonial testimonial-placeholder" aria-hidden="true"><div class="placeholder-line placeholder-stars"></div><div class="placeholder-line placeholder-quote"></div><div class="placeholder-line placeholder-quote short"></div><div class="placeholder-person"><span class="placeholder-avatar"></span><span class="placeholder-name"></span></div></article>').join('');
+}
+
+function renderTestimonials(root: HTMLElement, items: Array<Record<string, unknown>>) {
+  const track = root.querySelector('.carousel-track');
+  if (!track) return;
+  track.innerHTML = testimonialMarkup(items);
+}
+
+async function getCachedTestimonials(): Promise<Record<string, unknown>[]> {
+  if (typeof window === 'undefined') return [];
+  try {
+    const cached = window.localStorage.getItem(TESTIMONIAL_CACHE_KEY);
+    if (cached) {
+      const parsed = JSON.parse(cached);
+      if (Array.isArray(parsed)) return parsed as Record<string, unknown>[];
+    }
+  } catch (e) {
+    console.warn('Testimonials cache read failed', e);
+  }
+  try {
+    const fresh = await getPublishedCollection<Record<string, unknown>>(cmsCollections.testimonials);
+    try { window.localStorage.setItem(TESTIMONIAL_CACHE_KEY, JSON.stringify(fresh)); } catch (e) { console.warn('Testimonials cache write failed', e); }
+    return fresh;
+  } catch (e) {
+    console.error('Testimonials load failed', e);
+    return [];
+  }
+}
+
+function initializeTestimonialCarousel(root: HTMLElement) {
+  const carousel = root.querySelector('.carousel') as HTMLElement | null;
+  const track = carousel?.querySelector('.carousel-track') as HTMLElement | null;
+  const prev = carousel?.querySelector('.carousel-prev') as HTMLButtonElement | null;
+  const next = carousel?.querySelector('.carousel-next') as HTMLButtonElement | null;
+  if (!carousel || !track || !prev || !next) return;
+
+  const cards = () => Array.from(track.querySelectorAll<HTMLElement>('.testimonial'));
+  const scrollToCard = (direction: 1 | -1) => {
+    const items = cards();
+    if (!items.length) return;
+    const current = track.scrollLeft;
+    const target = direction > 0
+      ? items.find(item => item.offsetLeft > current + 8)
+      : [...items].reverse().find(item => item.offsetLeft < current - 8);
+    if (target) track.scrollTo({ left: Math.max(0, target.offsetLeft - 2), behavior: 'smooth' });
+    else if (direction > 0) track.scrollTo({ left: 0, behavior: 'smooth' });
+    else track.scrollTo({ left: track.scrollWidth, behavior: 'smooth' });
+  };
+
+  prev.onclick = () => scrollToCard(-1);
+  next.onclick = () => scrollToCard(1);
+
+  const existingTimer = Number(carousel.getAttribute('data-carousel-timer') ?? 0);
+  if (existingTimer) window.clearInterval(existingTimer);
+  if (carousel.dataset.autoplay === 'true') {
+    const timer = window.setInterval(() => scrollToCard(1), 4500);
+    carousel.setAttribute('data-carousel-timer', String(timer));
+  }
+}
+
+function faqMarkup(items: Array<Record<string, unknown>>) {
+  return items.slice().sort((a,b)=>Number(a.sortOrder??0)-Number(b.sortOrder??0)).map(x=>`<div class="faq-item"><button type="button" class="faq-q">${esc(x.question)}<span class="faq-plus">＋</span></button><div class="faq-a">${esc(x.answer)}</div></div>`).join('');
+}
+
+function showFaqPlaceholder(root: HTMLElement) {
+  const box = root.querySelector('.faq');
+  if (!box) return;
+  box.innerHTML = Array.from({ length: 4 }, () => '<div class="faq-item faq-placeholder" aria-hidden="true"><div class="faq-placeholder-q"><span></span><i></i></div></div>').join('');
+}
+
+function initializeFaqAccordion(root: HTMLElement) {
+  const box = root.querySelector('.faq');
+  if (!box) return;
+  box.querySelectorAll('.faq-q').forEach((button) => {
+    const item = button.parentElement;
+    if (!item) return;
+    (button as HTMLButtonElement).onclick = () => item.classList.toggle('open');
+  });
+}
+
+async function getCachedFaqs(): Promise<Record<string, unknown>[]> {
+  if (typeof window === 'undefined') return [];
+  try {
+    const cached = window.localStorage.getItem(FAQ_CACHE_KEY);
+    if (cached) {
+      const parsed = JSON.parse(cached);
+      if (Array.isArray(parsed)) return parsed as Record<string, unknown>[];
+    }
+  } catch (e) {
+    console.warn('FAQ cache read failed', e);
+  }
+  try {
+    const fresh = await getPublishedCollection<Record<string, unknown>>(cmsCollections.faq);
+    try { window.localStorage.setItem(FAQ_CACHE_KEY, JSON.stringify(fresh)); } catch (e) { console.warn('FAQ cache write failed', e); }
+    return fresh;
+  } catch (e) {
+    console.error('FAQ load failed', e);
+    return [];
+  }
+}
 
 function applyNavigation(root: HTMLElement, items: Array<Record<string, unknown>>) {
   const byKey = new Map(items.map((x) => [String(x.navKey ?? ''), x]));
@@ -62,13 +229,20 @@ async function applyCommon(root: HTMLElement) {
 }
 
 async function applyHome(root: HTMLElement) {
-  const [hero, home, trust, testimonials, faq] = await Promise.all([
+  showTestimonialPlaceholder(root);
+  showFaqPlaceholder(root);
+  showFeaturedProductPlaceholder(root);
+  initializeTestimonialCarousel(root);
+  const testimonialsPromise = getCachedTestimonials();
+  const faqPromise = getCachedFaqs();
+  const featuredProductsPromise = getFeaturedProducts();
+  const homeDataPromise = Promise.all([
     getPublishedCollection<Record<string, unknown>>(cmsCollections.heroSlider),
     getPublishedCollection<Record<string, unknown>>(cmsCollections.homepageContent),
     getPublishedCollection<Record<string, unknown>>(cmsCollections.trustPoints),
-    getPublishedCollection<Record<string, unknown>>(cmsCollections.testimonials),
-    getPublishedCollection<Record<string, unknown>>(cmsCollections.faq),
   ]);
+  const [testimonials, faq, featuredProducts] = await Promise.all([testimonialsPromise, faqPromise, featuredProductsPromise]);
+  const [hero, home, trust] = await homeDataPromise;
   const firstHero = [...hero].sort((a,b)=>Number(a.sortOrder??0)-Number(b.sortOrder??0))[0];
   if (firstHero) {
     text(root.querySelector('.hero .eyebrow'), firstHero.eyebrow);
@@ -82,6 +256,7 @@ async function applyHome(root: HTMLElement) {
     const art = root.querySelector('.hero-art') as HTMLElement | null;
     if (art && typeof firstHero.imageUrl === 'string' && firstHero.imageUrl.trim()) { art.style.backgroundImage = `url(${firstHero.imageUrl})`; art.style.backgroundSize = 'cover'; art.style.backgroundPosition = 'center'; }
   }
+  renderFeaturedProducts(root, featuredProducts);
   const byKey = new Map(home.map(x=>[String(x.key??''),x]));
   const promise = byKey.get('promise');
   if (promise) {
@@ -92,8 +267,12 @@ async function applyHome(root: HTMLElement) {
   if(why&&split){text(split.querySelector('.eyebrow'),why.eyebrow);text(split.querySelector('h2'),why.title);text(split.querySelector('p.muted'),why.body);const fs=Array.from(split.querySelectorAll('.feature'));[[why.feature1Title,why.feature1Text],[why.feature2Title,why.feature2Text],[why.feature3Title,why.feature3Text]].forEach((v,i)=>{text(fs[i]?.querySelector('h3'),v[0]);text(fs[i]?.querySelector('p'),v[1]);});text(split.querySelector('a'),why.buttonText);attr(split.querySelector('a'),'href',why.buttonUrl);}
   const app=byKey.get('appBanner'); const banner=root.querySelector('.banner'); if(app&&banner){text(banner.querySelector('.eyebrow'),app.eyebrow);text(banner.querySelector('h2'),app.title);text(banner.querySelector('p'),app.body);const stores=Array.from(banner.querySelectorAll('.store'));attr(stores[0],'href',app.googlePlayUrl);attr(stores[1],'href',app.appStoreUrl);}
   const trustMap=new Map(trust.map(x=>[String(x.itemKey??''),x])); const trustEls=Array.from(root.querySelectorAll('.trust-grid>div')); ['fresh','seed','water','ordering'].forEach((k,i)=>{const x=trustMap.get(k);if(x){text(trustEls[i]?.querySelector('strong'),x.title);text(trustEls[i]?.querySelector('span'),x.text);}});
-  if(testimonials.length){const track=root.querySelector('.testimonial')?.parentElement;if(track){track.innerHTML=testimonials.slice().sort((a,b)=>Number(a.sortOrder??0)-Number(b.sortOrder??0)).map(x=>`<article class="testimonial"><div class="stars">${'★'.repeat(Math.max(0,Math.min(5,Number(x.rating??0))))}</div><p class="quote">“${esc(x.content)}”</p><div class="person"><span class="avatar">${String(x.customerName??'?').trim().charAt(0).toUpperCase()}</span><span><strong>${esc(x.customerName)}</strong><br><small class="muted">Seedlings customer</small></span></div></article>`).join('');}}
-  if(faq.length){const box=root.querySelector('.faq');if(box){box.innerHTML=faq.slice().sort((a,b)=>Number(a.sortOrder??0)-Number(b.sortOrder??0)).map(x=>`<div class="faq-item"><button class="faq-q">${esc(x.question)}<span class="faq-plus">＋</span></button><div class="faq-a">${esc(x.answer)}</div></div>`).join('');}}
+  const testimonialItems = testimonials.length ? testimonials : STATIC_TESTIMONIALS;
+  renderTestimonials(root, testimonialItems);
+  initializeTestimonialCarousel(root);
+  const faqItems = faq.length ? faq : STATIC_FAQS;
+  const box=root.querySelector('.faq');
+  if(box){ box.innerHTML = faqMarkup(faqItems); initializeFaqAccordion(root); }
 }
 
 async function applyPage(root: HTMLElement, page: Page) {

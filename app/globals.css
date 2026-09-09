@@ -69,3 +69,13 @@
   opacity:.6;
   cursor:wait;
 }
+
+.testimonial-placeholder .placeholder-line,.testimonial-placeholder .placeholder-avatar,.testimonial-placeholder .placeholder-name{background:linear-gradient(90deg,#eef1e8 25%,#f8f9f5 50%,#eef1e8 75%);background-size:200% 100%;animation:testimonial-shimmer 1.4s infinite;border-radius:8px}
+.testimonial-placeholder .placeholder-stars{width:92px;height:14px}.testimonial-placeholder .placeholder-quote{width:100%;height:18px;margin-top:15px}.testimonial-placeholder .placeholder-quote.short{width:72%;margin-top:8px}.placeholder-person{display:flex;align-items:center;gap:10px;margin-top:22px}.testimonial-placeholder .placeholder-avatar{width:38px;height:38px;border-radius:50%}.testimonial-placeholder .placeholder-name{width:110px;height:14px}
+@keyframes testimonial-shimmer{0%{background-position:200% 0}100%{background-position:-200% 0}}
+
+.faq-placeholder .faq-placeholder-q{height:57px;padding:18px 20px;display:flex;justify-content:space-between;align-items:center}.faq-placeholder .faq-placeholder-q span,.faq-placeholder .faq-placeholder-q i{display:block;background:linear-gradient(90deg,#eef1e8 25%,#f8f9f5 50%,#eef1e8 75%);background-size:200% 100%;animation:faq-shimmer 1.4s infinite;border-radius:8px}.faq-placeholder .faq-placeholder-q span{width:58%;height:15px}.faq-placeholder .faq-placeholder-q i{width:20px;height:20px;border-radius:50%}@keyframes faq-shimmer{0%{background-position:200% 0}100%{background-position:-200% 0}}
+
+/* Featured product photos must not receive the decorative product-art overlay. */
+.product-art.has-image:after{display:none}
+.featured-products-section[hidden]{display:none}

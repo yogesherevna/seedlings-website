@@ -1,2 +1,3 @@
 import PrototypePage from '@/components/PrototypePage';
-export default function Page() { return <PrototypePage page="orders" />; }
+import OrdersHydrator from '@/components/OrdersHydrator';
+export default function Page() { return <OrdersHydrator><PrototypePage page="orders" /></OrdersHydrator>; }

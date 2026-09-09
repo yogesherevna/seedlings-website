@@ -41,3 +41,49 @@
 .transaction{background:var(--cream);border-radius:16px;padding:15px}.transaction-row{display:flex;justify-content:space-between;gap:20px;padding:7px 0;font-size:12px}.transaction-row strong{font-size:13px}
 @media(max-width:1000px){.account-shell{grid-template-columns:1fr}.account-side{position:static;display:flex;overflow:auto;gap:3px}.account-side a{white-space:nowrap}.kpi-grid{grid-template-columns:repeat(3,1fr)}.plan-grid{grid-template-columns:repeat(2,1fr)}}
 @media(max-width:700px){.kpi-grid{grid-template-columns:1fr}.address-grid{grid-template-columns:1fr}.order-row{grid-template-columns:1fr auto}.order-row>.status{grid-column:2;grid-row:1}.order-row>.btn{grid-column:2}.calendar-grid>div{min-height:68px;padding:5px}.calendar-grid .status{font-size:8px;padding:4px 6px}.plan-grid{grid-template-columns:1fr}}
+
+/* Runtime additions retained for application hydrators. */
+.account-message { min-height: 18px; }
+.auth-card h2 { font-size: 18px; margin: 0; }
+.auth-card input:disabled { opacity: .7; }
+
+
+/* Phase 11 Step 3 logout: same visual style as account sidebar links */
+.account-side .account-logout{
+  width:100%;
+  display:block;
+  border:0;
+  background:transparent;
+  color:inherit;
+  font:inherit;
+  text-align:left;
+  cursor:pointer;
+  padding:12px 14px;
+  border-radius:12px;
+  margin-top:4px;
+}
+.account-side .account-logout:hover{
+  background:rgba(105,135,45,.08);
+}
+.account-side .account-logout:disabled{
+  opacity:.6;
+  cursor:wait;
+}
+
+.testimonial-placeholder .placeholder-line,.testimonial-placeholder .placeholder-avatar,.testimonial-placeholder .placeholder-name{background:linear-gradient(90deg,#eef1e8 25%,#f8f9f5 50%,#eef1e8 75%);background-size:200% 100%;animation:testimonial-shimmer 1.4s infinite;border-radius:8px}
+.testimonial-placeholder .placeholder-stars{width:92px;height:14px}.testimonial-placeholder .placeholder-quote{width:100%;height:18px;margin-top:15px}.testimonial-placeholder .placeholder-quote.short{width:72%;margin-top:8px}.placeholder-person{display:flex;align-items:center;gap:10px;margin-top:22px}.testimonial-placeholder .placeholder-avatar{width:38px;height:38px;border-radius:50%}.testimonial-placeholder .placeholder-name{width:110px;height:14px}
+@keyframes testimonial-shimmer{0%{background-position:200% 0}100%{background-position:-200% 0}}
+
+.faq-placeholder .faq-placeholder-q{height:57px;padding:18px 20px;display:flex;justify-content:space-between;align-items:center}.faq-placeholder .faq-placeholder-q span,.faq-placeholder .faq-placeholder-q i{display:block;background:linear-gradient(90deg,#eef1e8 25%,#f8f9f5 50%,#eef1e8 75%);background-size:200% 100%;animation:faq-shimmer 1.4s infinite;border-radius:8px}.faq-placeholder .faq-placeholder-q span{width:58%;height:15px}.faq-placeholder .faq-placeholder-q i{width:20px;height:20px;border-radius:50%}@keyframes faq-shimmer{0%{background-position:200% 0}100%{background-position:-200% 0}}
+.product-placeholder .product-art{background:linear-gradient(145deg,#edf0e8,#f6f4ee)}
+.placeholder-product-image{width:132px;height:132px;border-radius:50%;background:rgba(255,255,255,.55);display:block}
+.placeholder-line{display:block;background:linear-gradient(90deg,#eceee8 25%,#f7f7f3 50%,#eceee8 75%);background-size:200% 100%;animation:placeholder-shimmer 1.4s infinite;border-radius:8px}
+.placeholder-tag{width:85px;height:10px;margin-bottom:10px}
+.placeholder-product-title{width:72%;height:20px;margin-bottom:12px}
+.placeholder-product-text{width:100%;height:12px;margin-bottom:8px}
+.placeholder-product-text.short{width:68%}
+@keyframes placeholder-shimmer{0%{background-position:200% 0}100%{background-position:-200% 0}}
+
+/* Featured product photos must not receive the decorative product-art overlay. */
+.product-art.has-image:after{display:none}
+.featured-products-section[hidden]{display:none}

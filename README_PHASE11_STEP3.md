@@ -10,3 +10,6 @@ Step 3 changes only the global dynamic UI:
 - Keeps all Phase 10/Phase 11 Step 1/Step 2 functionality intact.
 
 No new Firestore collections or data structures are introduced.
+
+
+Bug Fix: Home testimonials and FAQ now use CMS data with loading placeholders, local caching, static fallbacks, and working testimonial carousel controls.
