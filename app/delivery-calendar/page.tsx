@@ -1,2 +1,10 @@
 import PrototypePage from '@/components/PrototypePage';
-export default function Page() { return <PrototypePage page="delivery-calendar" />; }
+import DeliveryCalendarHydrator from '@/components/DeliveryCalendarHydrator';
+
+export default function Page() {
+  return (
+    <DeliveryCalendarHydrator>
+      <PrototypePage page="delivery-calendar" />
+    </DeliveryCalendarHydrator>
+  );
+}

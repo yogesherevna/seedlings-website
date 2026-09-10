@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import { collection, getDocs, query, where } from 'firebase/firestore';
 import { getCart, removeFromCart, setCartQuantity, type CartItem } from '@/lib/cart';
 import { db } from '@/lib/firebase';
+import { isSubscriptionEligible, type SalesProductComponent } from '@/lib/salesProducts';
 
 const esc = (v: unknown) => String(v ?? '').replace(/[&<>"']/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]!));
 const money = (v: number, currency='INR') => { try { return new Intl.NumberFormat('en-IN',{style:'currency',currency,maximumFractionDigits:0}).format(v); } catch { return `₹${v}`; } };
@@ -11,7 +12,7 @@ const money = (v: number, currency='INR') => { try { return new Intl.NumberForma
 type PurchaseMode = 'one-time' | 'subscription';
 type SubscriptionPlan = { id: string; name?: string; frequency?: string; price?: number; deliveriesPerTerm?: number | string; active?: boolean };
 
-type SalesMeta = { subscriptionPurchase?: boolean; oneTimePurchase?: boolean };
+type SalesMeta = { subscriptionPurchase?: boolean; oneTimePurchase?: boolean; active?: boolean; type?: 'single' | 'multiple'; components?: SalesProductComponent[] };
 
 function customerStorageSuffix() {
   if (typeof window === 'undefined') return 'guest';
@@ -62,7 +63,7 @@ export default function CartHydrator({ children }: { children: React.ReactNode }
       } else {
         list.innerHTML = items.map((item: CartItem) => {
           const meta = salesMeta[item.productId] || {};
-          const canSubscribe = meta.subscriptionPurchase === true;
+          const canSubscribe = isSubscriptionEligible({ id: item.productId, name: item.name, currency: item.currency, sellingPrice: item.price, oneTimePurchase: meta.oneTimePurchase === true, subscriptionPurchase: meta.subscriptionPurchase === true, active: meta.active === true, type: meta.type, components: meta.components } as any);
           const mode = (localStorage.getItem(modeKey(item.productId)) || 'one-time') as PurchaseMode;
           const selectedPlan = localStorage.getItem(planKey(item.productId)) || '';
           const modeHtml = canSubscribe ? `<div class="purchase-mode" style="margin-top:12px;padding:10px"><div class="mode-options"><button type="button" class="mode-option ${mode === 'one-time' ? 'selected' : ''}" data-mode="one-time" data-product-id="${esc(item.productId)}"><strong>One-time purchase</strong><span>Buy this box once.</span></button><button type="button" class="mode-option ${mode === 'subscription' ? 'selected' : ''}" data-mode="subscription" data-product-id="${esc(item.productId)}"><strong>Subscribe</strong><span>Recurring delivery.</span></button></div>${mode === 'subscription' ? `<label style="display:block;margin-top:10px">Subscription plan<select data-plan data-product-id="${esc(item.productId)}"><option value="">${plans.length ? 'Choose a plan' : 'Plans unavailable — choose on next step'}</option>${plans.map((p) => `<option value="${esc(p.id)}" ${selectedPlan === p.id ? 'selected' : ''}>${esc(p.name || p.frequency)}${p.deliveriesPerTerm ? ` — ${esc(p.deliveriesPerTerm)} deliveries` : ''}</option>`).join('')}</select></label><button type="button" class="btn primary" data-subscribe-cart data-product-id="${esc(item.productId)}" style="margin-top:10px">Continue with subscription</button>` : ''}</div>` : '';

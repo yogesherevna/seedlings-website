@@ -23,6 +23,8 @@ export type CustomerAccount = {
   countryCode?: string;
   name?: string;
   email?: string;
+  preferredDeliveryDay?: string;
+  deliveryDay?: string;
   status?: string;
   onboardingStatus?: string;
   addresses?: CustomerAddress[];
@@ -62,13 +64,17 @@ function writeCustomerCache(mobile: string, account: CustomerAccount | null) {
   }
 }
 
+export function getCachedCustomerAccount(mobile: string): CustomerAccount | null | undefined {
+  return readCustomerCache(mobile);
+}
+
 export function clearCustomerAccountCache(mobile: string) {
   if (typeof window === 'undefined') return;
   try { localStorage.removeItem(cacheKey(mobile)); } catch {}
 }
 
-export async function getCustomerAccount(mobile: string): Promise<CustomerAccount | null> {
-  const cached = readCustomerCache(mobile);
+export async function getCustomerAccount(mobile: string, options?: { bypassCache?: boolean }): Promise<CustomerAccount | null> {
+  const cached = options?.bypassCache ? undefined : readCustomerCache(mobile);
   if (cached !== undefined) return cached;
   const ref = doc(db, 'customers', mobile);
   const snap = await getDoc(ref);
@@ -77,11 +83,12 @@ export async function getCustomerAccount(mobile: string): Promise<CustomerAccoun
   return account;
 }
 
-export async function updateCustomerProfile(mobile: string, name: string, email: string) {
+export async function updateCustomerProfile(mobile: string, name: string, email: string, preferredDeliveryDay = 'Saturday') {
   const ref = doc(db, 'customers', mobile);
   await updateDoc(ref, {
     name: name.trim(),
     email: email.trim(),
+    preferredDeliveryDay: preferredDeliveryDay.trim() || 'Saturday',
     updatedAt: serverTimestamp(),
   });
   clearCustomerAccountCache(mobile);

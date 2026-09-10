@@ -6,6 +6,10 @@ import { auth } from '@/lib/firebase';
 import { getStoredCustomerMobile } from '@/lib/clientOnboarding';
 import { getCustomerAccount, type CustomerAccount, type CustomerAddress } from '@/lib/customerAccount';
 import { getCart, clearCart, type CartItem } from '@/lib/cart';
+import { createCustomerOneTimeOrder } from '@/lib/customerOrders';
+import { checkProductAvailability, nextWeekSaturday } from '@/lib/customerOrderAvailability';
+import { getActiveSalesProducts } from '@/lib/salesProducts';
+import { confirmHarvestShortage } from '@/lib/customerAlerts';
 
 const CHECKOUT_KEY = 'seedlings_checkout_details';
 const esc = (v: unknown) => String(v ?? '').replace(/[&<>"']/g, (c) => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]!));
@@ -36,7 +40,7 @@ export default function CheckoutHydrator({ children }: { children: React.ReactNo
         <label>Mobile<input data-mobile value="${esc(mobile)}" disabled></label>
         <h3 style="margin:22px 0 12px">Delivery address</h3>
         ${addresses.length ? `<label>Saved address<select data-address>${addresses.map((a) => `<option value="${esc(a.id || '')}" ${a.id === selectedId ? 'selected' : ''}>${esc(a.label || 'Address')} — ${esc(addressText(a))}</option>`).join('')}</select></label><div data-selected-address style="background:#faf7f1;border:1px solid #ddd2be;border-radius:14px;padding:13px;margin:8px 0 16px;font-size:13px">${esc(selected ? addressText(selected) : '')}</div>` : `<p class="muted" style="font-size:13px">No saved address found. Add an address from <a href="/addresses" style="text-decoration:underline">My Addresses</a> before checkout.</p>`}
-        <h3 style="margin:22px 0 12px">Delivery slot</h3><label>Weekend slot<select data-slot><option value="">Select a weekend slot</option><option value="Saturday morning">Saturday morning</option><option value="Saturday evening">Saturday evening</option><option value="Sunday morning">Sunday morning</option></select></label>
+        <h3 style="margin:22px 0 12px">Delivery slot</h3><label>Weekend slot<select data-slot><option value="">Select a Saturday delivery slot</option><option value="Saturday morning">Saturday morning — ${nextWeekSaturday()}</option><option value="Saturday evening">Saturday evening — ${nextWeekSaturday()}</option></select></label>
         <h3 style="margin:22px 0 12px">Payment</h3><label>Payment method<select data-payment><option value="online">Online payment</option></select></label>
         <p class="checkout-message" style="font-size:13px;min-height:18px;margin-top:12px"></p><button class="btn primary" style="width:100%" type="button" data-place>Place Order</button>
         <p class="muted" style="font-size:11px;margin-top:10px">Payment gateway processing is not connected yet. The order is created with payment status Pending.</p>
@@ -47,18 +51,35 @@ export default function CheckoutHydrator({ children }: { children: React.ReactNo
       root.querySelector('[data-place]')?.addEventListener('click', async () => {
         const name = (root.querySelector('[data-name]') as HTMLInputElement | null)?.value.trim() || ''; const addressId = address?.value || ''; const deliverySlot = slot?.value || ''; const paymentMethod = (root.querySelector('[data-payment]') as HTMLSelectElement | null)?.value || 'online';
         if (!name) return message('Enter your name.', true); if (!addressId) return message('Select a saved delivery address.', true); if (!deliverySlot) return message('Select a weekend delivery slot.', true);
-        const button = root.querySelector('[data-place]') as HTMLButtonElement | null; if (button) { button.disabled = true; button.textContent = 'Placing Order…'; }
+        const button = root.querySelector('[data-place]') as HTMLButtonElement | null; if (button) { button.disabled = true; button.textContent = 'Checking availability…'; }
         try {
           if (!auth.currentUser) throw new Error('Your login session has expired. Please sign in again.');
-          const token = await auth.currentUser.getIdToken();
-          const response = await fetch('/api/customer/orders', { method:'POST', headers:{ 'Content-Type':'application/json', Authorization:`Bearer ${token}` }, body: JSON.stringify({ mobile, addressId, scheduledDeliveryDate: deliverySlot, paymentMethod, items: getCart().map(i => ({ productId:i.productId, quantity:i.quantity })) }) });
-          const result = await response.json(); if (!response.ok) throw new Error(result.error || 'Unable to create order.');
+          const currentCart = getCart();
+          const salesProducts = await getActiveSalesProducts();
+          const targetDate = nextWeekSaturday();
+          const results = await Promise.all(currentCart.map(async (item) => {
+            const product = salesProducts.find((p) => p.id === item.productId);
+            if (!product) throw new Error(`Product "${item.name}" is no longer available.`);
+            return { item, result: await checkProductAvailability({ product, quantity: item.quantity, deliveryDate: targetDate }) };
+          }));
+          const shortages = results.filter(({ result }) => result.hasShortage);
+          let shortageDecision: 'continue' | 'contact' | undefined;
+          if (shortages.length) {
+            const availableGrams = Math.min(...shortages.map(({ result }) => result.availableGrams));
+            const requestedGrams = shortages.reduce((sum, { result }) => sum + result.requestedGrams, 0);
+            const shortageGrams = shortages.reduce((sum, { result }) => sum + result.shortageGrams, 0);
+            shortageDecision = await confirmHarvestShortage({ mode: 'one-time', availableGrams, requestedGrams, shortageGrams });
+          }
+          if (button) button.textContent = 'Placing Order…';
+          const result = await createCustomerOneTimeOrder({ mobile, addressId, deliverySlot, paymentMethod, shortageDecision, items: currentCart.map(i => ({ productId: i.productId, quantity: i.quantity })) });
           sessionStorage.setItem('seedlings_last_order', JSON.stringify(result)); clearCart(); window.location.href = `/order-success?order=${encodeURIComponent(result.orderNumber)}`;
         } catch (error) { message(error instanceof Error ? error.message : 'Unable to create order.', true); if (button) { button.disabled = false; button.textContent = 'Place Order'; } }
       });
     };
     const start = async (present: boolean) => { const mobile = getStoredCustomerMobile(); if (!present || !mobile) return renderSignedOut(); const cart = getCart(); if (!cart.length) return renderEmptyCart(); try { const account = await getCustomerAccount(mobile); if (!account) throw new Error('Customer account not found.'); render(mobile, account, cart); } catch (e) { console.error(e); renderSignedOut(); } };
-    const unsubscribe = onAuthStateChanged(auth, user => { void start(Boolean(user)); }); void start(Boolean(auth.currentUser));
+    // Wait for Firebase to restore the auth session before deciding whether the customer is signed in.
+    // This prevents the checkout page from flashing the sign-in screen on initial load.
+    const unsubscribe = onAuthStateChanged(auth, user => { void start(Boolean(user)); });
     const onCart = () => { void start(Boolean(auth.currentUser)); }; window.addEventListener('seedlings-cart-updated', onCart);
     return () => { stopped = true; unsubscribe(); window.removeEventListener('seedlings-cart-updated', onCart); };
   }, []);

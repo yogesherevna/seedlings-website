@@ -3,6 +3,7 @@
 import { useEffect, useRef, type ReactNode } from 'react';
 import { cmsCollections, getPublishedByField, getPublishedCollection, getDocById } from '@/lib/cms';
 import { getFeaturedProducts, type FeaturedProduct } from '@/lib/products';
+import { refreshActiveSalesProducts, productSlug } from '@/lib/salesProducts';
 
 export type Page = 'home'|'microgreens'|'product'|'journey'|'contact'|'account'|'cart'|'checkout'|'success';
 const text = (el: Element | null | undefined, value: unknown) => { if (el && typeof value === 'string' && value.trim()) el.textContent = value; };
@@ -23,13 +24,14 @@ const FAQ_CACHE_KEY = 'seedlings-cms-faq-v1';
 
 function featuredProductMarkup(items: FeaturedProduct[]) {
   return items.slice().sort((a,b)=>Number(a.sortOrder??0)-Number(b.sortOrder??0)).map(x=>{
-    const imageUrl = Array.isArray(x.imageUrls) && typeof x.imageUrls[0] === 'string' ? x.imageUrls[0] : '';
-    const price = Number(x.price);
+    const imageUrl = typeof x.imageUrl === 'string' ? x.imageUrl : '';
+    const price = Number(x.sellingPrice ?? 0);
     const art = imageUrl
       ? `<div class=\"product-art has-image\" style=\"background-image:url('${esc(imageUrl)}');background-size:cover;background-position:center;\"><span class=\"badge\">Featured</span></div>`
       : `<div class=\"product-art\"><span class=\"badge\">Featured</span></div>`;
     const priceMarkup = Number.isFinite(price) && price > 0 ? `From ₹${price}` : 'Freshly grown';
-    return `<article class=\"card\">${art}<div class=\"product-body\"><span class=\"tag\">${esc(x.category || 'Microgreen')}</span><h3>${esc(x.name)}</h3><p>${esc(x.shortDescription || x.description || '')}</p><div class=\"product-foot\"><span class=\"price\">${priceMarkup}</span><a class=\"mini\" href=\"microgreens.html\">View details</a></div></div></article>`;
+    const slug = encodeURIComponent(productSlug(x));
+    return `<article class=\"card\"><a href=\"/product/${slug}\" aria-label=\"View ${esc(x.name)}\"><div class=\"product-art${imageUrl ? ' has-image' : ''}\"${imageUrl ? ` style=\"background-image:url('${esc(imageUrl)}');background-size:cover;background-position:center;\"` : ''}><span class=\"badge\">Featured</span></div></a><div class=\"product-body\"><span class=\"tag\">${esc(x.category || (x.type === 'multiple' ? 'Salable combo' : 'Microgreen'))}</span><h3>${esc(x.name)}</h3><p>${esc(x.shortDescription || x.description || '')}</p><div class=\"product-foot\"><span class=\"price\">${priceMarkup}</span><a class=\"mini\" href=\"/product/${slug}\">View details</a></div></div></article>`;
   }).join('');
 }
 
@@ -276,7 +278,9 @@ async function applyHome(root: HTMLElement) {
     getPublishedCollection<Record<string, unknown>>(cmsCollections.trustPoints),
   ]);
   const [testimonials, faq, featuredProducts] = await Promise.all([testimonialsPromise, faqPromise, featuredProductsPromise]);
+  renderFeaturedProducts(root, featuredProducts);
   const [hero, home, trust] = await homeDataPromise;
+  void refreshActiveSalesProducts().then((fresh) => { if (!fresh.length) return; renderFeaturedProducts(root, fresh.filter((p) => p.featured === true)); }).catch((e) => console.warn('Featured products background refresh failed', e));
   const firstHero = [...hero].sort((a,b)=>Number(a.sortOrder??0)-Number(b.sortOrder??0))[0];
   if (firstHero) {
     text(root.querySelector('.hero .eyebrow'), firstHero.eyebrow);
@@ -290,7 +294,6 @@ async function applyHome(root: HTMLElement) {
     const art = root.querySelector('.hero-art') as HTMLElement | null;
     if (art && typeof firstHero.imageUrl === 'string' && firstHero.imageUrl.trim()) { art.style.backgroundImage = `url(${firstHero.imageUrl})`; art.style.backgroundSize = 'cover'; art.style.backgroundPosition = 'center'; }
   }
-  renderFeaturedProducts(root, featuredProducts);
   const byKey = new Map(home.map(x=>[String(x.key??''),x]));
   const promise = byKey.get('promise');
   if (promise) {

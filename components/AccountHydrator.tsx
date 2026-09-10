@@ -2,7 +2,9 @@
 
 import { useEffect, useRef, type ReactNode } from "react";
 import { onAuthStateChanged, signInAnonymously, signOut } from "firebase/auth";
-import { auth } from "@/lib/firebase";
+import { auth, db } from "@/lib/firebase";
+import { collection, getDocsFromServer, query, where } from "firebase/firestore";
+import { getCustomerAccount } from "@/lib/customerAccount";
 import { clearStoredCustomerMobile, ensureClientOnboarding, getStoredCustomerMobile, normalizeIndianMobile } from "@/lib/clientOnboarding";
 
 function formatDate(value: string) {
@@ -134,14 +136,30 @@ export default function AccountHydrator({ children }: { children: ReactNode }) {
       wireAccountActions();
 
       try {
-        const token = await user.getIdToken();
-        const response = await fetch(`/api/customer/account?mobile=${encodeURIComponent(mobile)}`, {
-          headers: { Authorization: `Bearer ${token}` },
-          cache: "no-store",
-        });
-        if (!response.ok) throw new Error((await response.json().catch(() => ({}))).error || "Unable to load account dashboard.");
-        const data = await response.json();
+        const [account, subscriptionsSnapshot, ordersSnapshot] = await Promise.all([
+          getCustomerAccount(mobile, { bypassCache: true }),
+          getDocsFromServer(query(collection(db, "subscriptions"), where("customerId", "==", mobile))),
+          getDocsFromServer(query(collection(db, "orders"), where("customerId", "==", mobile))),
+        ]);
+        if (!account) throw new Error("Customer account not found.");
         if (!alive) return;
+
+        const subscriptions: Array<Record<string, any> & { id: string }> = subscriptionsSnapshot.docs.map((item) => ({ id: item.id, ...(item.data() as Record<string, any>) }));
+        const orders: Array<Record<string, any> & { id: string }> = ordersSnapshot.docs.map((item) => ({ id: item.id, ...(item.data() as Record<string, any>) }));
+        const activeSubscriptions = subscriptions.filter((item) => String(item.status) === "active");
+        const dateValue = (value: unknown) => {
+          if (typeof value === "string") return value.slice(0, 10);
+          if (value && typeof value === "object" && "toDate" in value && typeof (value as { toDate?: unknown }).toDate === "function") return (value as { toDate: () => Date }).toDate().toISOString().slice(0, 10);
+          return "";
+        };
+        const upcoming = activeSubscriptions.filter((item: any) => dateValue(item.nextDeliveryDate)).sort((a: any, b: any) => dateValue(a.nextDeliveryDate).localeCompare(dateValue(b.nextDeliveryDate)))[0] || null;
+        const data = {
+          customer: { name: account.name || "", mobile },
+          activeSubscriptionCount: activeSubscriptions.length,
+          pastOrderCount: orders.length,
+          currentSubscription: upcoming,
+          upcomingDelivery: upcoming ? { date: dateValue(upcoming.nextDeliveryDate), productName: upcoming.productName, weightGrams: Number(upcoming.weightGrams || 0), quantity: Number(upcoming.quantity || 0), deliveryAddress: upcoming.deliveryAddress || null } : null,
+        };
 
         const customerName = data.customer?.name || "Customer";
         const heading = root.querySelector(".account-title h1") as HTMLElement | null;
