@@ -19,6 +19,8 @@ const applySeo = (title: unknown, description: unknown) => {
 };
 const esc = (value: unknown) => String(value ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\"/g,'&quot;').replace(/'/g,'&#39;');
 
+const money = (value: number, currency = 'INR') => { try { return new Intl.NumberFormat('en-IN', { style: 'currency', currency, maximumFractionDigits: 0 }).format(value); } catch { return `₹${value}`; } };
+
 const TESTIMONIAL_CACHE_KEY = 'seedlings-cms-testimonials-v1';
 const FAQ_CACHE_KEY = 'seedlings-cms-faq-v1';
 
@@ -26,10 +28,16 @@ function featuredProductMarkup(items: FeaturedProduct[]) {
   return items.slice().sort((a,b)=>Number(a.sortOrder??0)-Number(b.sortOrder??0)).map(x=>{
     const imageUrl = typeof x.imageUrl === 'string' ? x.imageUrl : '';
     const price = Number(x.sellingPrice ?? 0);
+    const mrp = Number(x.mrp ?? price);
+    const currency = x.currency || 'INR';
     const art = imageUrl
       ? `<div class=\"product-art has-image\" style=\"background-image:url('${esc(imageUrl)}');background-size:cover;background-position:center;\"><span class=\"badge\">Featured</span></div>`
       : `<div class=\"product-art\"><span class=\"badge\">Featured</span></div>`;
-    const priceMarkup = Number.isFinite(price) && price > 0 ? `From ₹${price}` : 'Freshly grown';
+    const priceMarkup = Number.isFinite(price) && price > 0
+      ? (Number.isFinite(mrp) && mrp > price
+        ? `<span class=\"price-stack\"><span class=\"price-mrp\">MRP ${esc(money(mrp, currency))}</span><strong class=\"price-sale\">${esc(money(price, currency))}</strong><span class=\"price-saving\">Save ${esc(money(mrp - price, currency))}</span></span>`
+        : `<span class=\"price-stack\"><strong class=\"price-sale\">${esc(money(price, currency))}</strong></span>`)
+      : 'Freshly grown';
     const slug = encodeURIComponent(productSlug(x));
     return `<article class=\"card\"><a href=\"/product/${slug}\" aria-label=\"View ${esc(x.name)}\"><div class=\"product-art${imageUrl ? ' has-image' : ''}\"${imageUrl ? ` style=\"background-image:url('${esc(imageUrl)}');background-size:cover;background-position:center;\"` : ''}><span class=\"badge\">Featured</span></div></a><div class=\"product-body\"><span class=\"tag\">${esc(x.category || (x.type === 'multiple' ? 'Salable combo' : 'Microgreen'))}</span><h3>${esc(x.name)}</h3><p>${esc(x.shortDescription || x.description || '')}</p><div class=\"product-foot\"><span class=\"price\">${priceMarkup}</span><a class=\"mini\" href=\"/product/${slug}\">View details</a></div></div></article>`;
   }).join('');

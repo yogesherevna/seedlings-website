@@ -24,6 +24,9 @@ export type SalesProduct = {
   components?: SalesProductComponent[];
   packedStockQuantity?: number;
   currency: string;
+  /** Original/reference price shown to customers. */
+  mrp?: number;
+  /** Actual price the customer pays. */
   sellingPrice: number;
   oneTimePurchase: boolean;
   subscriptionPurchase: boolean;

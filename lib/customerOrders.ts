@@ -59,7 +59,9 @@ export async function createCustomerOneTimeOrder(input: CreateOneTimeOrderInput)
     }
     if (!Number.isInteger(quantity) || quantity < 1) throw new Error('Item quantities must be at least 1.');
     const unitPrice = Number(product.sellingPrice);
+    const mrp = Number(product.mrp ?? unitPrice);
     if (!Number.isFinite(unitPrice) || unitPrice < 0) throw new Error(`Invalid price for "${product.name || id}".`);
+    if (!Number.isFinite(mrp) || mrp < unitPrice) throw new Error(`Invalid MRP for "${product.name || id}".`);
     const components = Array.isArray(product.components) ? product.components : [];
     const weightGrams = components.reduce((sum: number, component: Record<string, unknown>) => sum + Number(component.quantityGrams || 0), 0);
     items.push({
@@ -73,6 +75,7 @@ export async function createCustomerOneTimeOrder(input: CreateOneTimeOrderInput)
       sellingOptionLabel: product.type === 'multiple' ? 'Combo' : (components[0]?.quantityGrams ? `${components[0].quantityGrams}g` : 'Single'),
       weightGrams,
       quantity,
+      mrp,
       unitPrice,
       lineTotal: unitPrice * quantity,
       imageUrl: clean(product.imageUrl),
@@ -94,6 +97,8 @@ export async function createCustomerOneTimeOrder(input: CreateOneTimeOrderInput)
   const availableAvailabilityGrams = availabilityResults.filter(Boolean).reduce((sum: number, result: any) => sum + Number(result.availableGrams || 0), 0);
   const shortageAvailabilityGrams = availabilityResults.filter(Boolean).reduce((sum: number, result: any) => sum + Number(result.shortageGrams || 0), 0);
   const subtotal = items.reduce((sum, item) => sum + Number(item.lineTotal || 0), 0);
+  const mrpSubtotal = items.reduce((sum, item) => sum + Number(item.mrp || item.unitPrice || 0) * Number(item.quantity || 0), 0);
+  const productSavings = Math.max(0, mrpSubtotal - subtotal);
   // Read the small delivery-charge master without requiring a composite Firestore index.
   const chargesSnap = await getDocs(collection(db, 'deliveryCharges'));
   const activeCharges = chargesSnap.docs.filter((item) => { const data = item.data() || {}; return data.active === true && data.scope === 'one_time_order'; });
@@ -111,7 +116,7 @@ export async function createCustomerOneTimeOrder(input: CreateOneTimeOrderInput)
     items,
     subtotal,
     deliveryFee,
-    discount: 0,
+    discount: productSavings,
     total,
     currency: 'INR',
     paymentStatus: 'pending',

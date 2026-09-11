@@ -11,6 +11,8 @@ export type CartItem = {
   slug: string;
   name: string;
   price: number;
+  /** Original/reference price for savings display. */
+  mrp?: number;
   currency: string;
   imageUrl?: string;
   quantity: number;
@@ -26,6 +28,7 @@ function safeParse(value: string | null): CartItem[] {
       slug: String(item.slug || item.productId),
       name: String(item.name || 'Product'),
       price: Number(item.price || 0),
+      mrp: Number.isFinite(Number(item.mrp)) && Number(item.mrp) > 0 ? Number(item.mrp) : undefined,
       currency: String(item.currency || 'INR'),
       imageUrl: item.imageUrl ? String(item.imageUrl) : undefined,
       quantity: Math.max(1, Math.floor(Number(item.quantity))),

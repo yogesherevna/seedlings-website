@@ -8,7 +8,7 @@ import { getCustomerAccount, type CustomerAccount, type CustomerAddress } from '
 import { getCart, clearCart, type CartItem } from '@/lib/cart';
 import { createCustomerOneTimeOrder } from '@/lib/customerOrders';
 import { checkProductAvailability, nextWeekSaturday } from '@/lib/customerOrderAvailability';
-import { getActiveSalesProducts } from '@/lib/salesProducts';
+import { getActiveSalesProducts, type SalesProduct } from '@/lib/salesProducts';
 import { confirmHarvestShortage } from '@/lib/customerAlerts';
 
 const CHECKOUT_KEY = 'seedlings_checkout_details';
@@ -26,14 +26,17 @@ export default function CheckoutHydrator({ children }: { children: React.ReactNo
     const message = (text: string, error = false) => { const el = root.querySelector('.checkout-message') as HTMLElement | null; if (el) { el.textContent = text; el.style.color = error ? 'crimson' : ''; } };
     const renderSignedOut = () => { root.innerHTML = `<section class="auth-wrap"><div class="auth-card"><span class="eyebrow">Checkout</span><h1>Sign in to continue</h1><p>Please sign in with your mobile number before confirming your delivery details.</p><a class="btn primary" style="width:100%;text-align:center" href="/account">Go to Account Login</a></div></section>`; };
     const renderEmptyCart = () => { root.innerHTML = `<section class="auth-wrap"><div class="auth-card"><span class="eyebrow">Checkout</span><h1>Your cart is empty</h1><p>Add a Salable Product to your cart before checkout.</p><a class="btn primary" style="width:100%;text-align:center" href="/microgreens">Browse Microgreens</a></div></section>`; };
-    const render = (mobile: string, account: CustomerAccount, cart: CartItem[]) => {
+    const render = (mobile: string, account: CustomerAccount, cart: CartItem[], products: SalesProduct[]) => {
       const saved = (() => { try { return JSON.parse(sessionStorage.getItem(CHECKOUT_KEY) || 'null'); } catch { return null; } })();
       const addresses = account.addresses || [];
       const selectedId = saved?.addressId && addresses.some(a => a.id === saved.addressId) ? saved.addressId : (addresses[0]?.id || '');
       const selected = addresses.find(a => a.id === selectedId);
-      const subtotal = cart.reduce((sum, item) => sum + item.price * item.quantity, 0);
+      const priced = cart.map((item) => { const product = products.find((p) => p.id === item.productId); const salePrice = Number(product?.sellingPrice ?? item.price ?? 0); const mrp = Number(product?.mrp ?? item.mrp ?? salePrice); return { item, salePrice, mrp: Math.max(mrp, salePrice), currency: product?.currency || item.currency || 'INR' }; });
+      const subtotal = priced.reduce((sum, x) => sum + x.salePrice * x.item.quantity, 0);
+      const mrpSubtotal = priced.reduce((sum, x) => sum + x.mrp * x.item.quantity, 0);
+      const savings = Math.max(0, mrpSubtotal - subtotal);
       const count = cart.reduce((sum, item) => sum + item.quantity, 0);
-      const currency = cart[0]?.currency || 'INR';
+      const currency = priced[0]?.currency || cart[0]?.currency || 'INR';
       root.innerHTML = `<section class="section"><div class="container checkout-grid"><div class="form">
         <span class="eyebrow">Delivery details</span><h2 style="margin-top:8px">Confirm your delivery</h2>
         <label>Name<input data-name value="${esc(saved?.name || account.name || '')}" placeholder="Full name"></label>
@@ -44,7 +47,7 @@ export default function CheckoutHydrator({ children }: { children: React.ReactNo
         <h3 style="margin:22px 0 12px">Payment</h3><label>Payment method<select data-payment><option value="online">Online payment</option></select></label>
         <p class="checkout-message" style="font-size:13px;min-height:18px;margin-top:12px"></p><button class="btn primary" style="width:100%" type="button" data-place>Place Order</button>
         <p class="muted" style="font-size:11px;margin-top:10px">Payment gateway processing is not connected yet. The order is created with payment status Pending.</p>
-      </div><aside class="summary"><h3>Order summary</h3>${cart.map(i => `<div class="summary-row"><span>${esc(i.name)} × ${i.quantity}</span><span>${esc(money(i.price*i.quantity,i.currency))}</span></div>`).join('')}<div class="summary-row"><span>Items (${count})</span><span>${esc(money(subtotal,currency))}</span></div><div class="summary-row"><span>Delivery</span><span>Calculated on order</span></div><div class="summary-row summary-total"><span>Items subtotal</span><span>${esc(money(subtotal,currency))}</span></div><p class="muted" style="font-size:11px">The configured active one-time delivery charge is applied when the order is created.</p></aside></div></section>`;
+      </div><aside class="summary"><h3>Order summary</h3>${priced.map(({item, salePrice, mrp, currency}) => { const line = salePrice * item.quantity; const lineMrp = mrp * item.quantity; return `<div class="summary-row"><span>${esc(item.name)} × ${item.quantity}</span><span>${lineMrp > line ? `<span class="price-mrp">${esc(money(lineMrp,currency))}</span> ` : ''}<strong>${esc(money(line,currency))}</strong></span></div>`; }).join('')}<div class="summary-row"><span>Items (${count})</span><span>${esc(money(subtotal,currency))}</span></div>${savings > 0 ? `<div class="summary-row summary-saving"><span>You save</span><strong>${esc(money(savings,currency))}</strong></div>` : ''}<div class="summary-row"><span>Delivery</span><span>Calculated on order</span></div><div class="summary-row summary-total"><span>Items subtotal</span><span>${esc(money(subtotal,currency))}</span></div><p class="muted" style="font-size:11px">The configured active one-time delivery charge is applied when the order is created.</p></aside></div></section>`;
       const slot = root.querySelector('[data-slot]') as HTMLSelectElement | null; if (slot) slot.value = saved?.deliverySlot || '';
       const address = root.querySelector('[data-address]') as HTMLSelectElement | null; const preview = root.querySelector('[data-selected-address]') as HTMLElement | null;
       address?.addEventListener('change', () => { const a = addresses.find(x => x.id === address.value); if (preview) preview.textContent = a ? addressText(a) : ''; });
@@ -76,7 +79,7 @@ export default function CheckoutHydrator({ children }: { children: React.ReactNo
         } catch (error) { message(error instanceof Error ? error.message : 'Unable to create order.', true); if (button) { button.disabled = false; button.textContent = 'Place Order'; } }
       });
     };
-    const start = async (present: boolean) => { const mobile = getStoredCustomerMobile(); if (!present || !mobile) return renderSignedOut(); const cart = getCart(); if (!cart.length) return renderEmptyCart(); try { const account = await getCustomerAccount(mobile); if (!account) throw new Error('Customer account not found.'); render(mobile, account, cart); } catch (e) { console.error(e); renderSignedOut(); } };
+    const start = async (present: boolean) => { const mobile = getStoredCustomerMobile(); if (!present || !mobile) return renderSignedOut(); const cart = getCart(); if (!cart.length) return renderEmptyCart(); try { const account = await getCustomerAccount(mobile); if (!account) throw new Error('Customer account not found.'); let products: SalesProduct[] = []; try { products = await getActiveSalesProducts(); } catch (e) { console.warn('Checkout product pricing could not be loaded', e); } render(mobile, account, cart, products); } catch (e) { console.error(e); renderSignedOut(); } };
     // Wait for Firebase to restore the auth session before deciding whether the customer is signed in.
     // This prevents the checkout page from flashing the sign-in screen on initial load.
     const unsubscribe = onAuthStateChanged(auth, user => { void start(Boolean(user)); });

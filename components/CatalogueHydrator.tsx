@@ -17,6 +17,17 @@ const money = (value: number, currency = 'INR') => {
   catch { return `₹${value}`; }
 };
 
+const priceMarkup = (product: SalesProduct) => {
+  const sale = Number(product.sellingPrice ?? 0);
+  const mrp = Number(product.mrp ?? sale);
+  const currency = product.currency || 'INR';
+  if (Number.isFinite(mrp) && mrp > sale && sale >= 0) {
+    const saving = mrp - sale;
+    return `<span class=\"price-stack\"><span class=\"price-mrp\">MRP ${esc(money(mrp, currency))}</span><strong class=\"price-sale\">${esc(money(sale, currency))}</strong><span class=\"price-saving\">Save ${esc(money(saving, currency))}</span></span>`;
+  }
+  return `<span class=\"price-stack\"><strong class=\"price-sale\">${esc(money(sale, currency))}</strong></span>`;
+};
+
 const slugify = (value: string) => value
   .normalize('NFKD')
   .replace(/[\u0300-\u036f]/g, '')
@@ -40,7 +51,7 @@ function card(product: SalesProduct) {
   const image = product.imageUrl?.trim();
   const badge = product.featured ? 'Featured' : 'Fresh';
   const description = descriptionFor(product);
-  return `<article class="card"><a href="${esc(href)}" aria-label="View ${esc(product.name)}"><div class="product-art"${image ? ` style="background-image:url('${esc(image)}');background-size:cover;background-position:center"` : ''}><span class="badge">${badge}</span></div></a><div class="product-body"><span class="tag">${product.type === 'multiple' ? 'Salable combo' : 'Fresh microgreen'}</span><h3>${esc(product.name)}</h3><p>${esc(description)}</p><div class="product-foot"><span class="price">${esc(money(Number(product.sellingPrice ?? 0), product.currency || 'INR'))}</span><a class="mini" href="${esc(href)}">Details</a></div></div></article>`;
+  return `<article class="card"><a href="${esc(href)}" aria-label="View ${esc(product.name)}"><div class="product-art"${image ? ` style="background-image:url('${esc(image)}');background-size:cover;background-position:center"` : ''}><span class="badge">${badge}</span></div></a><div class="product-body"><span class="tag">${product.type === 'multiple' ? 'Salable combo' : 'Fresh microgreen'}</span><h3>${esc(product.name)}</h3><p>${esc(description)}</p><div class="product-foot"><span class="price">${priceMarkup(product)}</span><a class="mini" href="${esc(href)}">Details</a></div></div></article>`;
 }
 
 function renderError(root: HTMLElement, detail = false) {
@@ -172,7 +183,7 @@ async function applyProduct(root: HTMLElement, products: SalesProduct[], slug: s
   const description = root.querySelector('.detail p.muted');
   if (description) description.textContent = descriptionFor(product);
   const price = root.querySelector('.detail-price');
-  if (price) price.textContent = money(Number(product.sellingPrice ?? 0), product.currency || 'INR');
+  if (price) price.innerHTML = priceMarkup(product);
 
   const chips = root.querySelector('.chips');
   const choose = chips?.previousElementSibling;
@@ -240,7 +251,7 @@ async function applyProduct(root: HTMLElement, products: SalesProduct[], slug: s
         // not an additional quantity to add.
         setCartQuantity(product.id, quantity);
       } else {
-        addToCart({ productId: product.id, slug: slugFor(product), name: product.name, price: Number(product.sellingPrice ?? 0), currency: product.currency || 'INR', imageUrl: product.imageUrl }, quantity);
+        addToCart({ productId: product.id, slug: slugFor(product), name: product.name, price: Number(product.sellingPrice ?? 0), mrp: Number(product.mrp ?? product.sellingPrice ?? 0), currency: product.currency || 'INR', imageUrl: product.imageUrl }, quantity);
       }
       if (addButton) {
         addButton.textContent = goCart ? 'Added' : 'Added to cart';
