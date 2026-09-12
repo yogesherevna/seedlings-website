@@ -5,7 +5,7 @@ import { collection, getDocs, getDocsFromServer, query, where } from "firebase/f
 import { db } from "@/lib/firebase";
 import { getStoredCustomerMobile } from "@/lib/clientOnboarding";
 import { getCustomerAccount, type CustomerAddress } from "@/lib/customerAccount";
-import { getActiveSalesProducts, isSubscriptionEligible } from "@/lib/salesProducts";
+import { getActiveSalesProducts } from "@/lib/salesProducts";
 import { createCustomerSubscription, updateCustomerSubscriptionStatus } from "@/lib/customerSubscriptions";
 import { checkProductAvailability, nextWeekSaturday } from "@/lib/customerOrderAvailability";
 import { confirmHarvestShortage, showCustomerSuccess } from "@/lib/customerAlerts";
@@ -68,7 +68,7 @@ export default function SubscriptionHydrator({ children }: { children: React.Rea
 
         if (selectedProduct) {
           const product = salesProducts.find((p) => p.id === String(selectedProduct.productId));
-          if (!product || product.active !== true || product.subscriptionPurchase !== true || !isSubscriptionEligible(product)) {
+          if (!product || product.active !== true) {
             sessionStorage.removeItem("seedlings_subscription_product");
             sessionStorage.removeItem("seedlings_subscription_plan");
             selectedProduct = null;

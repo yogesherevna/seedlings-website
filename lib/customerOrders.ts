@@ -1,6 +1,7 @@
 import { addDoc, collection, doc, getDoc, getDocs, query, serverTimestamp, where } from 'firebase/firestore';
 import { db } from './firebase';
 import { checkProductAvailability, nextWeekSaturday } from './customerOrderAvailability';
+import { calculateCheckoutDeliveryCharges } from './deliveryCharges';
 
 export type CreateOneTimeOrderInput = {
   mobile: string;
@@ -99,13 +100,8 @@ export async function createCustomerOneTimeOrder(input: CreateOneTimeOrderInput)
   const subtotal = items.reduce((sum, item) => sum + Number(item.lineTotal || 0), 0);
   const mrpSubtotal = items.reduce((sum, item) => sum + Number(item.mrp || item.unitPrice || 0) * Number(item.quantity || 0), 0);
   const productSavings = Math.max(0, mrpSubtotal - subtotal);
-  // Read the small delivery-charge master without requiring a composite Firestore index.
-  const chargesSnap = await getDocs(collection(db, 'deliveryCharges'));
-  const activeCharges = chargesSnap.docs.filter((item) => { const data = item.data() || {}; return data.active === true && data.scope === 'one_time_order'; });
-  if (activeCharges.length > 1) throw new Error('Multiple active one-time delivery charges are configured. Please configure one active charge before accepting website orders.');
-  const chargeDoc = activeCharges[0];
-  const charge = chargeDoc?.data() || null;
-  const deliveryFee = charge ? (charge.mode === 'free' ? 0 : Math.max(0, Number(charge.amount || 0))) : 0;
+  const deliveryCharges = await calculateCheckoutDeliveryCharges({ pincode: String((address as Record<string, unknown>).pincode || ''), oneTime: true, subscriptions: [] });
+  const deliveryFee = deliveryCharges.oneTime.finalCharge;
   const total = subtotal + deliveryFee;
 
   const order = {
@@ -129,9 +125,10 @@ export async function createCustomerOneTimeOrder(input: CreateOneTimeOrderInput)
     notes: clean(input.notes),
     orderType: 'one_time',
     subscriptionId: null,
-    deliveryChargeId: chargeDoc?.id || '',
-    deliveryChargeName: clean(charge?.name),
+    deliveryChargeId: deliveryCharges.oneTime.sourceId,
+    deliveryChargeName: deliveryCharges.oneTime.sourceName,
     deliveryChargeSnapshot: deliveryFee,
+    deliveryChargeDetails: deliveryCharges.oneTime.snapshot,
     packingStatus: 'pending',
     requiresCustomerContact: input.shortageDecision === 'contact',
     availabilityRequestedGrams: requestedAvailabilityGrams,

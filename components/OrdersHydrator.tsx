@@ -100,12 +100,9 @@ function render(root: HTMLElement, orders: Order[], filter: string) {
     const type = normalizedType(order);
     const label = type === 'subscription' ? 'Subscription' : 'One Time';
     const status = statusLabel(order);
-    const subscriptionRef = type === 'subscription' && order.subscriptionId
-      ? `<small class="order-meta">${esc(order.subscriptionId)}</small>`
-      : '';
     return `<tr>
       <td data-label="Sr">${index + 1}</td>
-      <td data-label="Product"><strong>${esc(productSummary(order))}</strong>${subscriptionRef}</td>
+      <td data-label="Product"><strong>${esc(productSummary(order))}</strong></td>
       <td data-label="Amount"><strong>${money(order.total)}</strong></td>
       <td data-label="Order date">${esc(dateText(order.createdAt || order.scheduledDeliveryDate))}</td>
       <td data-label="Delivery date">${esc(dateText(order.deliveryDate || order.scheduledDeliveryDate))}</td>

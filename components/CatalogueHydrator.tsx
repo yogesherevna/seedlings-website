@@ -1,10 +1,11 @@
 "use client";
 
 import { useEffect, useRef, type ReactNode } from 'react';
-import { collection, getDocsFromServer, query, where } from 'firebase/firestore';
-import { getActiveSalesProducts, refreshActiveSalesProducts, isSubscriptionEligible, productMoods, productSlug, type SalesProduct } from '@/lib/salesProducts';
-import { addToCart, getCart, setCartQuantity } from '@/lib/cart';
-import { db } from '@/lib/firebase';
+import { getActiveSalesProducts, refreshActiveSalesProducts, productMoods, productSlug, type SalesProduct } from '@/lib/salesProducts';
+import { addToCart, addSubscriptionToCart, getCart, removeSubscriptionFromCart, setCartQuantity } from '@/lib/cart';
+import { getStoredCustomerMobile } from '@/lib/clientOnboarding';
+import { createCustomerSubscription, loadActiveCustomerSubscriptionPlans } from '@/lib/customerSubscriptions';
+import { nextWeekSaturday } from '@/lib/customerOrderAvailability';
 
 type Page = 'microgreens' | 'product';
 
@@ -38,20 +39,52 @@ const slugify = (value: string) => value
 
 const slugFor = (p: SalesProduct) => productSlug(p);
 const isPlaceholderDescription = (value: string) => ['dsds', 'dssd', 'test', 'test description'].includes(value.trim().toLowerCase());
-const descriptionFor = (p: SalesProduct) => {
-  const description = p.description?.trim() || '';
+const listingDescriptionFor = (p: SalesProduct) => {
   const short = p.shortDescription?.trim() || '';
-  if (description && !isPlaceholderDescription(description)) return description;
+  const description = p.description?.trim() || '';
   if (short && !isPlaceholderDescription(short)) return short;
+  if (description && !isPlaceholderDescription(description)) return description;
   return 'Freshly grown microgreens, harvested with care and prepared for delivery.';
 };
+
+/** Render trusted Admin rich-text HTML while stripping scripts, event handlers and unsafe URLs. */
+const richTextHtml = (value: string | undefined, fallback = '') => {
+  const source = value?.trim() || '';
+  if (!source || isPlaceholderDescription(source)) return fallback ? esc(fallback) : '';
+  if (typeof document === 'undefined') return esc(source);
+  const template = document.createElement('template');
+  template.innerHTML = source;
+  const allowedTags = new Set(['P','BR','STRONG','B','EM','I','U','S','UL','OL','LI','A','H2','H3','H4','BLOCKQUOTE','DIV','SPAN']);
+  template.content.querySelectorAll('*').forEach((node) => {
+    const element = node as HTMLElement;
+    if (!allowedTags.has(element.tagName)) {
+      element.replaceWith(...Array.from(element.childNodes));
+      return;
+    }
+    Array.from(element.attributes).forEach((attribute) => {
+      const name = attribute.name.toLowerCase();
+      const value = attribute.value;
+      if (name.startsWith('on') || name === 'style' || name === 'src' || name === 'srcset' || (name === 'href' && /^\s*javascript:/i.test(value))) {
+        element.removeAttribute(attribute.name);
+      }
+    });
+    if (element.tagName === 'A' && element.getAttribute('href')) {
+      element.setAttribute('target', '_blank');
+      element.setAttribute('rel', 'noopener noreferrer');
+    }
+  });
+  return template.innerHTML;
+};
+
+const richTextContent = (value: string | undefined, fallback = '') => richTextHtml(value, fallback);
 
 function card(product: SalesProduct) {
   const href = `/product/${encodeURIComponent(slugFor(product))}`;
   const image = product.imageUrl?.trim();
   const badge = product.featured ? 'Featured' : 'Fresh';
-  const description = descriptionFor(product);
-  return `<article class="card"><a href="${esc(href)}" aria-label="View ${esc(product.name)}"><div class="product-art"${image ? ` style="background-image:url('${esc(image)}');background-size:cover;background-position:center"` : ''}><span class="badge">${badge}</span></div></a><div class="product-body"><span class="tag">${product.type === 'multiple' ? 'Salable combo' : 'Fresh microgreen'}</span><h3>${esc(product.name)}</h3><p>${esc(description)}</p><div class="product-foot"><span class="price">${priceMarkup(product)}</span><a class="mini" href="${esc(href)}">Details</a></div></div></article>`;
+  const description = listingDescriptionFor(product);
+  const descriptionHtml = richTextHtml(description);
+  return `<article class="card"><a href="${esc(href)}" aria-label="View ${esc(product.name)}"><div class="product-art"${image ? ` style="background-image:url('${esc(image)}');background-size:cover;background-position:center"` : ''}><span class="badge">${badge}</span></div></a><div class="product-body"><span class="tag">${product.type === 'multiple' ? 'Salable combo' : 'Fresh microgreen'}</span><h3>${esc(product.name)}</h3><div class="product-card-description rich-text">${descriptionHtml}</div><div class="product-foot"><span class="price">${priceMarkup(product)}</span><a class="mini" href="${esc(href)}">Details</a></div></div></article>`;
 }
 
 function renderError(root: HTMLElement, detail = false) {
@@ -144,29 +177,16 @@ type SubscriptionPlan = {
 };
 
 async function loadActiveSubscriptionPlans(): Promise<SubscriptionPlan[]> {
-  const snapshot = await getDocsFromServer(query(collection(db, 'subscriptionPlans'), where('active', '==', true)));
-  // Admin defines subscription plans as global masters; they are not product-wise.
-  return snapshot.docs
-    .map((doc) => ({ id: doc.id, ...doc.data() }) as SubscriptionPlan)
-    .filter((plan) => plan.active === true && Number(plan.price ?? 0) >= 0);
+  const plans = await loadActiveCustomerSubscriptionPlans();
+  return plans
+    .filter((plan) => plan.active === true && Number(plan.price ?? 0) >= 0)
+    .map((plan) => ({ ...plan }) as SubscriptionPlan);
 }
 
 function subscriptionFrequencyLabel(value: unknown) {
   const raw = String(value ?? '').trim().toLowerCase();
   if (!raw) return 'Subscription';
   return raw.split(/[_\s-]+/).map((part) => part.charAt(0).toUpperCase() + part.slice(1)).join(' ');
-}
-
-function subscriptionPlanMarkup(plans: SubscriptionPlan[]) {
-  if (!plans.length) return '';
-  return `<div class="subscription-section"><div class="subscription-section-head"><span class="eyebrow">Subscribe & save</span><h3>Subscription plans</h3><p class="muted">Choose any active Seedlings subscription plan.</p></div><div class="subscription-plan-grid">${plans.map((plan) => {
-    const price = Number(plan.price ?? 0);
-    const deliveries = Number(plan.deliveriesPerTerm ?? 0);
-    const deliveryText = deliveries > 0 ? `${deliveries} ${deliveries === 1 ? 'delivery' : 'deliveries'} / term` : 'Ongoing deliveries';
-    const deliveryCharge = Number(plan.deliveryCharge ?? 0);
-    const chargeText = plan.deliveryChargeMode === 'per_delivery' && deliveryCharge > 0 ? `+ ${money(deliveryCharge)} / delivery` : 'Delivery included';
-    return `<button class="subscription-plan-block" type="button" data-subscription-plan="${esc(plan.id)}" aria-label="Choose ${esc(plan.name || subscriptionFrequencyLabel(plan.frequency))} subscription"><span class="subscription-plan-top"><strong>${esc(plan.name || subscriptionFrequencyLabel(plan.frequency))}</strong><span class="subscription-plan-arrow">→</span></span><span class="subscription-plan-frequency">${esc(subscriptionFrequencyLabel(plan.frequency))}</span><span class="subscription-plan-price">${esc(money(price))}<small> / term</small></span><span class="subscription-plan-meta">${esc(deliveryText)} · ${esc(chargeText)}</span>${plan.description ? `<span class="subscription-plan-description">${esc(plan.description)}</span>` : ''}<span class="subscription-plan-cta">Start subscription</span></button>`;
-  }).join('')}</div></div>`;
 }
 
 async function applyProduct(root: HTMLElement, products: SalesProduct[], slug: string) {
@@ -182,10 +202,17 @@ async function applyProduct(root: HTMLElement, products: SalesProduct[], slug: s
 
   const image = product.imageUrl?.trim();
   const art = root.querySelector('.detail-art') as HTMLElement | null;
-  if (art && image) {
-    art.style.backgroundImage = `url('${image.replace(/'/g, "%27")}')`;
-    art.style.backgroundSize = 'cover';
-    art.style.backgroundPosition = 'center';
+  if (art) {
+    art.innerHTML = image
+      ? `<span class="detail-image-badge">Fresh product</span>`
+      : `<span class="detail-image-placeholder">Product image</span>`;
+    if (image) {
+      art.style.backgroundImage = `url('${image.replace(/'/g, "%27")}')`;
+      art.style.backgroundSize = 'cover';
+      art.style.backgroundPosition = 'center';
+    } else {
+      art.style.backgroundImage = '';
+    }
     art.style.minHeight = '560px';
   }
 
@@ -200,77 +227,157 @@ async function applyProduct(root: HTMLElement, products: SalesProduct[], slug: s
   }
   const rating = root.querySelector('.rating');
   if (rating) rating.textContent = product.featured ? 'Featured · Fresh availability' : 'Fresh availability';
-  const description = root.querySelector('.detail p.muted');
-  if (description) description.textContent = descriptionFor(product);
+
+  const shortDescription = root.querySelector('[data-product-short-description]') as HTMLElement | null;
+  if (shortDescription) {
+    const shortHtml = richTextContent(product.shortDescription);
+    shortDescription.innerHTML = shortHtml;
+    shortDescription.hidden = !shortHtml;
+  }
+
+  const description = root.querySelector('[data-product-description]') as HTMLElement | null;
+  if (description) {
+    const descriptionHtml = richTextContent(product.description);
+    description.innerHTML = descriptionHtml || '<p>Freshly grown microgreens, harvested with care and prepared for delivery.</p>';
+  }
+
   const price = root.querySelector('.detail-price');
   if (price) price.innerHTML = priceMarkup(product);
 
   const chips = root.querySelector('.chips');
   const choose = chips?.previousElementSibling;
-  const productSubscriptionEligible = isSubscriptionEligible(product);
   let plans: SubscriptionPlan[] = [];
-  if (productSubscriptionEligible && product.subscriptionPurchase === true) {
-    try { plans = await loadActiveSubscriptionPlans(); }
-    catch (error) { console.warn('Subscription plans could not be loaded from website Firebase', error); }
-  }
-  const subscriptionAvailable = productSubscriptionEligible && product.subscriptionPurchase === true && plans.length > 0;
+  try { plans = await loadActiveSubscriptionPlans(); }
+  catch (error) { console.warn('Subscription plans could not be loaded from website Firebase', error); }
+  const subscriptionAvailable = product.active === true && plans.length > 0;
   const oneTimeAvailable = Boolean(product.oneTimePurchase);
   if (chips) chips.remove();
-  if (choose) choose.textContent = subscriptionAvailable ? 'Purchase options' : 'Purchase';
+  if (choose) choose.textContent = 'Purchase';
 
   const info = root.querySelector('.detail-info');
   if (info) {
-    info.innerHTML = `<div><strong>Availability</strong><br><span class="muted">${Number(product.packedStockQuantity ?? 0) > 0 ? 'Available for purchase.' : 'Current packed stock is limited.'}</span></div><div><strong>Purchase</strong><br><span class="muted">${oneTimeAvailable && subscriptionAvailable ? 'One-time and subscription purchase options.' : subscriptionAvailable ? 'Subscription purchase available.' : oneTimeAvailable ? 'One-time purchase available.' : 'Purchase unavailable.'}</span></div><div><strong>Delivery</strong><br><span class="muted">Weekend delivery slots.</span></div>`;
+    const descriptionHtml = richTextContent(product.description, 'Freshly grown microgreens, harvested with care and prepared for delivery.');
+    info.innerHTML = `<div><strong>Availability</strong><br><span class="muted">${Number(product.packedStockQuantity ?? 0) > 0 ? 'Available for purchase.' : 'Current packed stock is limited.'}</span></div><div><strong>Purchase</strong><br><span class="muted">${oneTimeAvailable ? 'One-time purchase available.' : 'Purchase unavailable.'}</span></div><div><strong>Delivery</strong><br><span class="muted">Weekend delivery slots.</span></div><div class="detail-description-row"><strong>Product description</strong><div class="rich-text" data-product-description>${descriptionHtml}</div></div>`;
   }
 
   const actions = root.querySelector('.actions');
+  const oldQty = root.querySelector('.qty');
+  if (oldQty) oldQty.remove();
   if (actions) {
-    actions.innerHTML =
-      (oneTimeAvailable ? '<button class="btn primary" data-add-cart type="button">Add to cart</button><button class="btn outline buy-now-button" data-buy-now type="button">Buy now</button>' : '') +
-      (subscriptionAvailable ? subscriptionPlanMarkup(plans) : '');
+    actions.innerHTML = `
+      ${oneTimeAvailable ? `<div class="one-time-purchase">
+        <div class="purchase-heading">One-time purchase</div>
+        <div class="product-cart-control" data-cart-control>
+          <button class="btn primary cart-add-button" data-cart-add type="button">Add</button>
+        </div>
+      </div>` : ''}
+      ${subscriptionAvailable ? `<button class="sticky-subscribe-trigger" data-open-subscribe type="button"><span class="sticky-subscribe-icon">▣</span><span><strong>Subscribe</strong><small>Set it once and enjoy automatic deliveries</small></span><span class="sticky-subscribe-arrow">›</span></button>` : ''}
+      ${subscriptionAvailable ? `<div class="subscribe-backdrop" data-subscribe-backdrop hidden></div><aside class="subscribe-sheet" data-subscribe-sheet aria-hidden="true" hidden></aside>` : ''}`;
 
-    const qtyEl = root.querySelector('#qty') as HTMLElement | null;
-    const existingCartItem = getCart().find((item) => item.productId === product.id);
-    const initialCartQuantity = existingCartItem?.quantity || 1;
-    const getQty = () => Math.max(1, Number(qtyEl?.textContent || '1'));
-    const setQty = (next: number) => { if (qtyEl) qtyEl.textContent = String(Math.max(1, Math.floor(Number.isFinite(next) ? next : 1))); };
-    setQty(initialCartQuantity);
-    const minusButton = root.querySelector('[data-minus="#qty"]') as HTMLButtonElement | null;
-    const plusButton = root.querySelector('[data-plus="#qty"]') as HTMLButtonElement | null;
-    if (minusButton) minusButton.onclick = () => setQty(getQty() - 1);
-    if (plusButton) plusButton.onclick = () => setQty(getQty() + 1);
+    const cartControl = actions.querySelector('[data-cart-control]') as HTMLElement | null;
+    const renderCartControl = () => {
+      if (!cartControl) return;
+      const current = getCart().find((item) => item.productId === product.id);
+      const quantity = current?.quantity || 0;
+      if (!quantity) {
+        cartControl.innerHTML = `<button class="btn primary cart-add-button" data-cart-add type="button">Add</button>`;
+        return;
+      }
+      const leftControl = quantity === 1
+        ? `<svg class="cart-trash-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16"></path><path d="M9 7V4h6v3"></path><path d="M7 7l1 13h8l1-13"></path><path d="M10 11v5M14 11v5"></path></svg>`
+        : '−';
+      cartControl.innerHTML = `<div class="cart-quantity-control"><button class="cart-quantity-btn ${quantity === 1 ? 'remove' : ''}" data-cart-decrease type="button" aria-label="${quantity === 1 ? 'Remove from cart' : 'Decrease quantity'}">${leftControl}</button><strong>${quantity}</strong><button class="cart-quantity-btn" data-cart-increase type="button" aria-label="Increase quantity">+</button></div>`;
+    };
+    renderCartControl();
 
-    const addButton = actions.querySelector('[data-add-cart]') as HTMLButtonElement | null;
-    const buyButton = actions.querySelector('[data-buy-now]') as HTMLButtonElement | null;
-    const addToCartForQuantity = () => {
-      const quantity = getQty();
-      const currentCartItem = getCart().find((item) => item.productId === product.id);
-      if (currentCartItem) setCartQuantity(product.id, quantity);
-      else addToCart({ productId: product.id, slug: slugFor(product), name: product.name, price: Number(product.sellingPrice ?? 0), mrp: Number(product.mrp ?? product.sellingPrice ?? 0), currency: product.currency || 'INR', imageUrl: product.imageUrl }, quantity);
+    cartControl?.addEventListener('click', (event) => {
+      const target = event.target as HTMLElement;
+      if (target.closest('[data-cart-add]')) {
+        addToCart({ productId: product.id, slug: slugFor(product), name: product.name, price: Number(product.sellingPrice ?? 0), mrp: Number(product.mrp ?? product.sellingPrice ?? 0), currency: product.currency || 'INR', imageUrl: product.imageUrl }, 1);
+        window.location.href = '/cart';
+      } else if (target.closest('[data-cart-decrease]')) {
+        const current = getCart().find((item) => item.productId === product.id);
+        if (current) setCartQuantity(product.id, current.quantity - 1);
+        renderCartControl();
+      } else if (target.closest('[data-cart-increase]')) {
+        const current = getCart().find((item) => item.productId === product.id);
+        if (current) setCartQuantity(product.id, current.quantity + 1);
+        renderCartControl();
+      }
+    });
+
+    const sheet = actions.querySelector('[data-subscribe-sheet]') as HTMLElement | null;
+    const backdrop = actions.querySelector('[data-subscribe-backdrop]') as HTMLElement | null;
+    const editParams = new URLSearchParams(window.location.search);
+    const editPlanId = editParams.get('editPlan') || '';
+    const editStartDate = editParams.get('editStartDate') || '';
+    const editQuantity = Math.max(1, Math.floor(Number(editParams.get('editQuantity') || '1')) || 1);
+    let selectedPlanId = plans.some((plan) => plan.id === editPlanId) ? editPlanId : (plans[0]?.id || '');
+    let subscriptionQuantity = editParams.has('editQuantity') ? editQuantity : 1;
+
+    const closeSheet = () => {
+      if (!sheet || !backdrop) return;
+      sheet.hidden = true;
+      sheet.setAttribute('aria-hidden', 'true');
+      backdrop.hidden = true;
+      document.body.classList.remove('subscribe-sheet-open');
     };
 
-    addButton?.addEventListener('click', () => {
-      addToCartForQuantity();
-      addButton.textContent = 'Added to cart';
-      addButton.disabled = true;
-      window.setTimeout(() => { addButton.textContent = 'Add to cart'; addButton.disabled = false; }, 900);
-    });
-
-    buyButton?.addEventListener('click', () => {
-      addToCartForQuantity();
-      window.location.href = '/checkout';
-    });
-
-    actions.querySelectorAll<HTMLButtonElement>('[data-subscription-plan]').forEach((button) => {
-      button.addEventListener('click', () => {
-        const planId = button.dataset.subscriptionPlan || '';
-        if (!planId) return;
-        sessionStorage.setItem('seedlings_subscription_product', JSON.stringify({ productId: product.id, name: product.name, quantity: getQty() }));
-        sessionStorage.setItem('seedlings_subscription_plan', planId);
-        window.location.href = '/subscriptions';
+    const renderSheet = async () => {
+      if (!sheet) return;
+      const selectedPlan = plans.find((p) => p.id === selectedPlanId) || plans[0];
+      selectedPlanId = selectedPlan?.id || '';
+      sheet.innerHTML = `<div class="subscribe-sheet-handle"></div>
+        <div class="subscribe-sheet-head"><div><span class="eyebrow">Subscribe</span><h2>${esc(product.name)}</h2><p>Set it once and enjoy automatic deliveries.</p></div><button type="button" data-close-subscribe aria-label="Close">×</button></div>
+        <div class="subscribe-product-card"><div class="subscribe-product-thumb" style="${product.imageUrl ? `background-image:url('${esc(product.imageUrl)}')` : ''}"></div><div><strong>${esc(product.name)}</strong><p>${esc(product.type === 'multiple' ? 'Combo' : 'Fresh microgreen')}</p></div><div class="subscribe-product-price">${esc(money(Number(product.sellingPrice ?? 0), product.currency || 'INR'))}</div></div>
+        <div class="subscribe-step"><div class="subscribe-step-title"><span>1</span><div><strong>Select plan</strong><small>Choose how often you want it delivered</small></div></div><div class="subscribe-plan-grid-modal">${plans.map((plan) => `<button type="button" class="subscribe-plan-option ${plan.id === selectedPlanId ? 'active' : ''}" data-modal-plan="${esc(plan.id)}"><strong>${esc(plan.name || subscriptionFrequencyLabel(plan.frequency))}</strong><span>${esc(money(Number(plan.price ?? 0), product.currency || 'INR'))} / term</span><small>${Number(plan.deliveriesPerTerm ?? 0) > 0 ? `${Number(plan.deliveriesPerTerm)} deliveries / term` : 'Ongoing deliveries'} · ${plan.deliveryChargeMode === 'per_delivery' && Number(plan.deliveryCharge ?? 0) > 0 ? `+ ${money(Number(plan.deliveryCharge))} / delivery` : 'Delivery included'}</small></button>`).join('')}</div></div>
+        <div class="subscribe-step"><div class="subscribe-step-title"><span>2</span><div><strong>Quantity</strong><small>Packs per delivery</small></div></div><div class="modal-quantity-control"><button type="button" data-modal-minus>−</button><strong data-modal-qty>${subscriptionQuantity}</strong><button type="button" data-modal-plus>+</button></div></div>
+        <div class="subscribe-step"><div class="subscribe-step-title"><span>3</span><div><strong>Start date</strong><small>Delivery starts from</small></div></div><div class="subscribe-date-row"><input data-modal-start type="date" value="${esc(editStartDate || nextWeekSaturday())}"><span>Saturday delivery</span></div></div>
+        <div class="subscribe-benefit"><strong>Delivery included</strong><span>Delivery address will be selected on the subscription checkout screen.</span></div>
+        <button class="btn primary subscribe-now-button" data-modal-submit type="button" ${selectedPlanId ? '' : 'disabled'}>Subscribe</button>`;
+      sheet.querySelector('[data-close-subscribe]')?.addEventListener('click', closeSheet);
+      sheet.querySelectorAll<HTMLButtonElement>('[data-modal-plan]').forEach((button) => button.addEventListener('click', () => {
+        selectedPlanId = button.dataset.modalPlan || '';
+        sheet.querySelectorAll('[data-modal-plan]').forEach((el) => el.classList.toggle('active', (el as HTMLElement).dataset.modalPlan === selectedPlanId));
+      }));
+      sheet.querySelector('[data-modal-minus]')?.addEventListener('click', () => { subscriptionQuantity = Math.max(1, subscriptionQuantity - 1); const el = sheet.querySelector('[data-modal-qty]'); if (el) el.textContent = String(subscriptionQuantity); });
+      sheet.querySelector('[data-modal-plus]')?.addEventListener('click', () => { subscriptionQuantity += 1; const el = sheet.querySelector('[data-modal-qty]'); if (el) el.textContent = String(subscriptionQuantity); });
+      sheet.querySelector('[data-modal-submit]')?.addEventListener('click', () => {
+        const startDate = (sheet.querySelector('[data-modal-start]') as HTMLInputElement | null)?.value || '';
+        if (!selectedPlanId) return;
+        const selectedPlan = plans.find((plan) => plan.id === selectedPlanId);
+        if (!selectedPlan) return;
+        addSubscriptionToCart({
+          productId: product.id,
+          slug: slugFor(product),
+          name: product.name,
+          price: Number(selectedPlan.price ?? 0),
+          mrp: Number(selectedPlan.price ?? 0),
+          currency: product.currency || 'INR',
+          imageUrl: product.imageUrl,
+          planId: selectedPlan.id,
+          planName: selectedPlan.name || subscriptionFrequencyLabel(selectedPlan.frequency),
+          frequency: selectedPlan.frequency,
+          deliveriesPerTerm: Number(selectedPlan.deliveriesPerTerm ?? 0) || undefined,
+          startDate: startDate || nextWeekSaturday(),
+        }, subscriptionQuantity);
+        closeSheet();
+        window.location.href = '/cart';
       });
-    });
+    };
+
+    actions.querySelectorAll('[data-open-subscribe]').forEach((button) => button.addEventListener('click', async () => {
+      if (!sheet || !backdrop) return;
+      sheet.hidden = false; sheet.setAttribute('aria-hidden', 'false'); backdrop.hidden = false; document.body.classList.add('subscribe-sheet-open');
+      await renderSheet();
+    }));
+    backdrop?.addEventListener('click', closeSheet);
+    if (editPlanId) {
+      const openButton = actions.querySelector('[data-open-subscribe]') as HTMLButtonElement | null;
+      if (openButton) setTimeout(() => openButton.click(), 0);
+    }
   }
+
 
 }
 

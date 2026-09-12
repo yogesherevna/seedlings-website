@@ -60,6 +60,8 @@ function renderLogin(root: HTMLElement) {
   };
   const showOtp = () => {
     stopTimer();
+    // The OTP UI is a single instance. Never append another OTP section.
+    card.querySelector('.account-otp-row')?.remove();
     expiresAt = Date.now() + 60000;
     const row=document.createElement('div'); row.className='account-otp-row'; row.style.marginTop='14px';
     row.innerHTML='<label>OTP<input type="text" inputmode="numeric" maxlength="4" placeholder="Enter 4-digit OTP"></label><p class="otp-timer" style="text-align:center;margin:10px 0;font-size:13px"></p><button class="btn outline" type="button" style="width:100%">Verify OTP</button>';
@@ -80,7 +82,11 @@ function renderLogin(root: HTMLElement) {
   action.addEventListener('click',(e)=>{
     e.preventDefault(); message('');
     const normalized=normalizeIndianMobile(input.value); if(!normalized){message('Enter a valid 10-digit Indian mobile number.');return;}
-    mobile=normalized; action.textContent='OTP sent'; showOtp();
+    mobile=normalized;
+    // Send OTP is a one-shot action for this login attempt. Hide it after sending
+    // so repeated clicks cannot create duplicate OTP inputs/verify buttons.
+    action.style.display='none';
+    showOtp();
   });
   action.removeAttribute('href'); action.style.cursor='pointer';
 }

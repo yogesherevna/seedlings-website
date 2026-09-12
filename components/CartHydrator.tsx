@@ -1,133 +1,40 @@
 "use client";
 import type React from 'react';
-import { useEffect, useRef, useState } from 'react';
-import { collection, getDocs, query, where } from 'firebase/firestore';
-import { getCart, removeFromCart, setCartQuantity, type CartItem } from '@/lib/cart';
-import { db } from '@/lib/firebase';
-import { isSubscriptionEligible, type SalesProductComponent } from '@/lib/salesProducts';
+import { useEffect } from 'react';
+import { getActiveSalesProducts, type SalesProduct } from '@/lib/salesProducts';
+import { loadActiveCustomerSubscriptionPlans } from '@/lib/customerSubscriptions';
+import { getUnifiedCart, removeFromCart, removeSubscriptionFromCart, setCartQuantity, setSubscriptionCartQuantity, type SubscriptionCartItem } from '@/lib/cart';
 
-const esc = (v: unknown) => String(v ?? '').replace(/[&<>"']/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]!));
-const money = (v: number, currency='INR') => { try { return new Intl.NumberFormat('en-IN',{style:'currency',currency,maximumFractionDigits:0}).format(v); } catch { return `₹${v}`; } };
+const esc=(v:unknown)=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]!));
+const money=(v:number,currency='INR')=>{try{return new Intl.NumberFormat('en-IN',{style:'currency',currency,maximumFractionDigits:0}).format(v)}catch{return `₹${v}`}};
+const dateLabel=(v:string)=>{try{return new Intl.DateTimeFormat('en-IN',{day:'numeric',month:'short',year:'numeric'}).format(new Date(`${v}T00:00:00`))}catch{return v}};
 
-type PurchaseMode = 'one-time' | 'subscription';
-type SubscriptionPlan = { id: string; name?: string; frequency?: string; price?: number; deliveriesPerTerm?: number | string; active?: boolean };
-
-type SalesMeta = { subscriptionPurchase?: boolean; oneTimePurchase?: boolean; active?: boolean; type?: 'single' | 'multiple'; components?: SalesProductComponent[]; mrp?: number; sellingPrice?: number; currency?: string };
-
-function customerStorageSuffix() {
-  if (typeof window === 'undefined') return 'guest';
-  return window.localStorage.getItem('seedlings_customer_mobile') || 'guest';
-}
-function modeKey(productId: string) { return `seedlings_cart_mode:${customerStorageSuffix()}:${productId}`; }
-function planKey(productId: string) { return `seedlings_cart_plan:${customerStorageSuffix()}:${productId}`; }
-
-export default function CartHydrator({ children }: { children: React.ReactNode }) {
-  const ref = useRef<HTMLDivElement>(null);
-  const [salesMeta, setSalesMeta] = useState<Record<string, SalesMeta>>({});
-  const [plans, setPlans] = useState<SubscriptionPlan[]>([]);
-
-  useEffect(() => {
-    let alive = true;
-    Promise.all([
-      getDocs(query(collection(db, 'salesProducts'), where('active', '==', true))),
-      getDocs(query(collection(db, 'subscriptionPlans'), where('active', '==', true))),
-    ]).then(([salesSnap, plansSnap]) => {
-      if (!alive) return;
-      const sales: Record<string, SalesMeta> = {};
-      salesSnap.docs.forEach((doc) => { sales[doc.id] = doc.data() as SalesMeta; });
-      setSalesMeta(sales);
-      setPlans(plansSnap.docs
-        .map((doc) => ({ id: doc.id, ...doc.data() }) as SubscriptionPlan)
-        .filter((p) => p.active !== false && ['monthly', 'quarterly'].includes(String(p.frequency))));
-    }).catch((error) => {
-      console.warn('Cart subscription options could not be loaded', error);
-    });
-    return () => { alive = false; };
-  }, []);
-
-  useEffect(() => {
-    const root = ref.current; if (!root) return;
-    const render = () => {
-      const items = getCart();
-      const list = root.querySelector('.cart-list') as HTMLElement | null;
-      const summary = root.querySelector('.summary') as HTMLElement | null;
-      const purchaseMode = root.querySelector('.purchase-mode') as HTMLElement | null;
-      if (!list || !summary) return;
-
-      if (purchaseMode) {
-        purchaseMode.innerHTML = `<strong>How would you like to buy?</strong><p class="muted" style="font-size:12px;margin:3px 0 12px">Choose one-time purchase or subscription for each product.</p>${plans.length ? '' : '<p class="muted" style="font-size:12px;margin:0">Subscription plans are currently unavailable.</p>'}`;
-      }
-
-      if (!items.length) {
-        list.innerHTML = '<div class="cart-item"><div><strong>Your cart is empty</strong><p class="muted">Add fresh microgreens from the catalogue to get started.</p></div></div>';
-      } else {
-        list.innerHTML = items.map((item: CartItem) => {
-          const meta = salesMeta[item.productId] || {};
-          const canSubscribe = isSubscriptionEligible({ id: item.productId, name: item.name, currency: item.currency, sellingPrice: item.price, oneTimePurchase: meta.oneTimePurchase === true, subscriptionPurchase: meta.subscriptionPurchase === true, active: meta.active === true, type: meta.type, components: meta.components } as any);
-          const mode = (localStorage.getItem(modeKey(item.productId)) || 'one-time') as PurchaseMode;
-          const selectedPlan = localStorage.getItem(planKey(item.productId)) || '';
-          const modeHtml = canSubscribe ? `<div class="purchase-mode" style="margin-top:12px;padding:10px"><div class="mode-options"><button type="button" class="mode-option ${mode === 'one-time' ? 'selected' : ''}" data-mode="one-time" data-product-id="${esc(item.productId)}"><strong>One-time purchase</strong><span>Buy this box once.</span></button><button type="button" class="mode-option ${mode === 'subscription' ? 'selected' : ''}" data-mode="subscription" data-product-id="${esc(item.productId)}"><strong>Subscribe</strong><span>Recurring delivery.</span></button></div>${mode === 'subscription' ? `<label style="display:block;margin-top:10px">Subscription plan<select data-plan data-product-id="${esc(item.productId)}"><option value="">${plans.length ? 'Choose a plan' : 'Plans unavailable — choose on next step'}</option>${plans.map((p) => `<option value="${esc(p.id)}" ${selectedPlan === p.id ? 'selected' : ''}>${esc(p.name || p.frequency)}${p.deliveriesPerTerm ? ` — ${esc(p.deliveriesPerTerm)} deliveries` : ''}</option>`).join('')}</select></label><button type="button" class="btn primary" data-subscribe-cart data-product-id="${esc(item.productId)}" style="margin-top:10px">Continue with subscription</button>` : ''}</div>` : '';
-          const salePrice = Number(meta.sellingPrice ?? item.price ?? 0);
-          const mrp = Number(meta.mrp ?? item.mrp ?? salePrice);
-          const currency = meta.currency || item.currency || 'INR';
-          const lineSaving = Math.max(0, mrp - salePrice) * item.quantity;
-          const pricing = mrp > salePrice
-            ? `<span class="price-stack"><span class="price-mrp">MRP ${esc(money(mrp, currency))}</span><strong class="price-sale">${esc(money(salePrice, currency))} each</strong></span>`
-            : `<span class="price-stack"><strong class="price-sale">${esc(money(salePrice, currency))} each</strong></span>`;
-          return `<div class="cart-item" data-cart-id="${esc(item.productId)}"><div class="cart-thumb"${item.imageUrl ? ` style="background-image:url('${esc(item.imageUrl)}');background-size:cover;background-position:center"` : ''}></div><div style="min-width:0"><strong>${esc(item.name)}</strong><div style="margin:4px 0 10px">${pricing}${lineSaving > 0 ? `<span class="price-saving">Save ${esc(money(lineSaving, currency))}</span>` : ''}</div><div class="qty"><button type="button" data-minus>−</button><strong data-qty>${item.quantity}</strong><button type="button" data-plus>+</button></div><button type="button" data-remove style="margin-top:8px;background:none;border:0;padding:0;cursor:pointer;text-decoration:underline">Remove</button>${modeHtml}</div><span class="price">${esc(money(salePrice*item.quantity,currency))}</span></div>`;
-        }).join('');
-      }
-      const total = items.reduce((sum, i) => { const meta = salesMeta[i.productId] || {}; return sum + Number(meta.sellingPrice ?? i.price ?? 0) * i.quantity; }, 0);
-      const mrpTotal = items.reduce((sum, i) => { const meta = salesMeta[i.productId] || {}; const sale = Number(meta.sellingPrice ?? i.price ?? 0); const mrp = Number(meta.mrp ?? i.mrp ?? sale); return sum + Math.max(mrp, sale) * i.quantity; }, 0);
-      const savings = Math.max(0, mrpTotal - total);
-      const count = items.reduce((sum, i) => sum + i.quantity, 0);
-      const currency = items[0]?.currency || 'INR';
-      const itemRow = summary.querySelector('.summary-row');
-      if (itemRow) itemRow.innerHTML = `<span>Items (${count})</span><span>${esc(money(total,currency))}</span>`;
-      const savingsRow = summary.querySelector('.summary-saving') as HTMLElement | null;
-      if (savingsRow) { savingsRow.innerHTML = savings > 0 ? `<span>You save</span><strong>${esc(money(savings,currency))}</strong>` : ''; savingsRow.style.display = savings > 0 ? '' : 'none'; }
-      const totalRow = summary.querySelector('.summary-total');
-      if (totalRow) totalRow.innerHTML = `<span>Total</span><span>${esc(money(total,currency))}</span>`;
-      const checkout = summary.querySelector('a.btn.primary') as HTMLAnchorElement | null;
-      if (checkout) { checkout.style.pointerEvents = items.length ? '' : 'none'; checkout.style.opacity = items.length ? '1' : '.5'; }
-
-      root.querySelectorAll('[data-cart-id]').forEach((row) => {
-        const id = (row as HTMLElement).dataset.cartId!;
-        row.querySelector('[data-minus]')?.addEventListener('click', () => { const current=getCart().find(x=>x.productId===id)?.quantity||1; setCartQuantity(id,current-1); render(); });
-        row.querySelector('[data-plus]')?.addEventListener('click', () => { const current=getCart().find(x=>x.productId===id)?.quantity||0; setCartQuantity(id,current+1); render(); });
-        row.querySelector('[data-remove]')?.addEventListener('click', () => { removeFromCart(id); localStorage.removeItem(modeKey(id)); localStorage.removeItem(planKey(id)); render(); });
-      });
-
-      root.querySelectorAll('[data-mode]').forEach((button) => button.addEventListener('click', () => {
-        const el = button as HTMLElement;
-        const id = el.dataset.productId || '';
-        const mode = (el.dataset.mode || 'one-time') as PurchaseMode;
-        localStorage.setItem(modeKey(id), mode);
-        if (mode === 'one-time') localStorage.removeItem(planKey(id));
-        render();
-      }));
-
-      root.querySelectorAll('[data-plan]').forEach((select) => select.addEventListener('change', () => {
-        const el = select as HTMLSelectElement;
-        localStorage.setItem(planKey(el.dataset.productId || ''), el.value);
-      }));
-
-      root.querySelectorAll('[data-subscribe-cart]').forEach((button) => button.addEventListener('click', () => {
-        const el = button as HTMLButtonElement;
-        const id = el.dataset.productId || '';
-        const item = getCart().find((x) => x.productId === id);
-        if (!item) return;
-        const planId = localStorage.getItem(planKey(id)) || '';
-        sessionStorage.setItem('seedlings_subscription_product', JSON.stringify({ productId: item.productId, name: item.name, quantity: item.quantity }));
-        if (planId) sessionStorage.setItem('seedlings_subscription_plan', planId);
-        else sessionStorage.removeItem('seedlings_subscription_plan');
-        window.location.href = '/subscriptions';
-      }));
-    };
-    render();
-    window.addEventListener('storage', render); window.addEventListener('seedlings-cart-updated', render);
-    return () => { window.removeEventListener('storage', render); window.removeEventListener('seedlings-cart-updated', render); };
-  }, [salesMeta, plans]);
-
-  return <div ref={ref}>{children}</div>;
+export default function CartHydrator({children}:{children:React.ReactNode}){
+ useEffect(()=>{
+  const root=document.querySelector('[data-cart-root]') as HTMLElement|null;if(!root)return;
+  let dead=false;
+  const render=async()=>{
+   const cart=getUnifiedCart();
+   const [products,plans]=await Promise.all([getActiveSalesProducts(),loadActiveCustomerSubscriptionPlans().catch(()=>[])]);
+   if(dead)return;
+   const byId=new Map(products.map(p=>[p.id,p]));
+   const one=cart.oneTimeItems, subs=cart.subscriptionItems;
+   if(!one.length&&!subs.length){root.innerHTML=`<section class="auth-wrap"><div class="auth-card"><span class="eyebrow">Cart</span><h1>Your cart is empty</h1><p>Add fresh microgreens or choose a subscription from the catalogue.</p><a class="btn primary" style="width:100%;text-align:center" href="/microgreens">Browse Microgreens</a></div></section>`;return;}
+   const productData=(id:string)=>byId.get(id);
+   const oneTotal=one.reduce((s,i)=>s+Number(productData(i.productId)?.sellingPrice??i.price)*i.quantity,0);
+   const subTotal=subs.reduce((s,i)=>s+Number(i.price)*i.quantity,0);
+   const oneMrp=one.reduce((s,i)=>s+Math.max(Number(productData(i.productId)?.mrp??i.mrp??i.price),Number(productData(i.productId)?.sellingPrice??i.price))*i.quantity,0);
+   const oneSavings=Math.max(0,oneMrp-oneTotal);
+   const currency=one[0]?.currency||subs[0]?.currency||'INR';
+   const rowOne=(i:any)=>{const p=productData(i.productId);const price=Number(p?.sellingPrice??i.price);return `<div class="cart-item" data-one-id="${esc(i.productId)}"><div class="cart-thumb"${i.imageUrl?` style="background-image:url('${esc(i.imageUrl)}');background-size:cover;background-position:center"`:''}></div><div style="min-width:0"><strong>${esc(i.name)}</strong><p class="muted">One-time purchase</p><div class="qty"><button data-minus>−</button><strong>${i.quantity}</strong><button data-plus>+</button></div><button type="button" data-remove class="cart-remove">Remove</button></div><span class="price">${esc(money(price*i.quantity,i.currency))}</span></div>`};
+   const rowSub=(i:SubscriptionCartItem)=>`<div class="cart-item" data-sub-id="${esc(i.productId)}" data-plan-id="${esc(i.planId)}" data-start-date="${esc(i.startDate)}"><div class="cart-thumb"${i.imageUrl?` style="background-image:url('${esc(i.imageUrl)}');background-size:cover;background-position:center"`:''}></div><div style="min-width:0"><strong>${esc(i.name)}</strong><p class="muted">${esc(i.planName)} · ${esc(i.frequency||'Recurring')}</p><p class="muted" style="margin:2px 0 10px">Start date: <strong>${esc(dateLabel(i.startDate))}</strong></p><div class="qty"><button data-minus>−</button><strong>${i.quantity}</strong><button data-plus>+</button></div><button type="button" data-remove class="cart-remove">Remove</button><button type="button" data-edit class="cart-edit">Edit subscription</button></div><span class="price">${esc(money(Number(i.price)*i.quantity,i.currency))}</span></div>`;
+   const planWarning=subs.some(i=>!plans.some(p=>p.id===i.planId));
+   root.innerHTML=`<section class="section"><div class="container checkout-grid"><div class="cart-list"><span class="eyebrow">Your cart</span><h1 style="margin:8px 0 24px">Fresh deliveries, together</h1>${subs.length?`<div class="cart-section"><h3>Subscriptions</h3>${subs.map(rowSub).join('')}</div>`:''}${one.length?`<div class="cart-section" style="margin-top:28px"><h3>One-time purchases</h3>${one.map(rowOne).join('')}</div>`:''}${planWarning?`<p class="checkout-message" style="color:crimson">One of your selected subscription plans is no longer active. Edit or remove it before checkout.</p>`:''}</div><aside class="summary"><h3>Cart summary</h3>${subs.length?`<div class="summary-row"><span>Subscriptions</span><strong>${esc(money(subTotal,currency))}</strong></div>`:''}${one.length?`<div class="summary-row"><span>One-time purchases</span><strong>${esc(money(oneTotal,currency))}</strong></div>`:''}${oneSavings?`<div class="summary-row summary-saving"><span>You save</span><strong>${esc(money(oneSavings,currency))}</strong></div>`:''}<div class="summary-row"><span>Delivery</span><span>Calculated at checkout</span></div><div class="summary-row summary-total"><span>Total</span><span>${esc(money(oneTotal+subTotal,currency))}</span></div><a class="btn primary" style="width:100%;margin-top:18px;${planWarning?'pointer-events:none;opacity:.5':''}" href="/checkout">Proceed to Checkout</a></aside></div></section>`;
+   root.querySelectorAll<HTMLElement>('[data-one-id]').forEach(row=>{const id=row.dataset.oneId!;row.querySelector('[data-minus]')?.addEventListener('click',()=>{const i=getUnifiedCart().oneTimeItems.find(x=>x.productId===id);if(i)setCartQuantity(id,i.quantity-1);void render()});row.querySelector('[data-plus]')?.addEventListener('click',()=>{const i=getUnifiedCart().oneTimeItems.find(x=>x.productId===id);if(i)setCartQuantity(id,i.quantity+1);void render()});row.querySelector('[data-remove]')?.addEventListener('click',()=>{removeFromCart(id);void render()})});
+   root.querySelectorAll<HTMLElement>('[data-sub-id]').forEach(row=>{const id=row.dataset.subId!,plan=row.dataset.planId!,start=row.dataset.startDate!;row.querySelector('[data-minus]')?.addEventListener('click',()=>{const i=getUnifiedCart().subscriptionItems.find(x=>x.productId===id&&x.planId===plan&&x.startDate===start);if(i)setSubscriptionCartQuantity(id,plan,start,i.quantity-1);void render()});row.querySelector('[data-plus]')?.addEventListener('click',()=>{const i=getUnifiedCart().subscriptionItems.find(x=>x.productId===id&&x.planId===plan&&x.startDate===start);if(i)setSubscriptionCartQuantity(id,plan,start,i.quantity+1);void render()});row.querySelector('[data-remove]')?.addEventListener('click',()=>{removeSubscriptionFromCart(id,plan,start);void render()});row.querySelector('[data-edit]')?.addEventListener('click',()=>{window.location.href=`/product/${encodeURIComponent(iSlug(id,products))}?editPlan=${encodeURIComponent(plan)}&editStartDate=${encodeURIComponent(start)}&editQuantity=${encodeURIComponent(String((getUnifiedCart().subscriptionItems.find(x=>x.productId===id&&x.planId===plan&&x.startDate===start)?.quantity)||1))}`})});
+  };
+  const iSlug=(id:string,ps:SalesProduct[])=>ps.find(p=>p.id===id)?.slug||ps.find(p=>p.id===id)?.name||id;
+  void render();const onCart=()=>void render();window.addEventListener('seedlings-cart-updated',onCart);return()=>{dead=true;window.removeEventListener('seedlings-cart-updated',onCart)};
+ },[]);
+ return <>{children}</>;
 }

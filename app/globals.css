@@ -125,3 +125,147 @@
 .subscription-plan-cta{margin-top:8px;color:var(--green-dark);font-size:12px;font-weight:700}
 .buy-now-button{font-weight:700}
 @media(max-width:700px){.subscription-plan-grid{grid-template-columns:1fr}.subscription-plan-block{padding:15px}}
+
+/* Product detail UX refresh: one-time purchase controls plus subscription via bottom sheet. */
+.product-detail{grid-template-columns:minmax(0,1fr) minmax(0,.92fr);gap:56px}
+.detail-art{min-height:560px;border-radius:26px;background-color:#f3efe3;background-size:cover;background-position:center;box-shadow:0 14px 38px rgba(71,47,22,.08)}
+.detail-image-badge{position:absolute;left:20px;bottom:20px;background:var(--green-dark);color:#fff;padding:9px 14px;border-radius:999px;font-size:12px;font-weight:700;box-shadow:0 8px 18px rgba(71,47,22,.14)}
+.detail-image-placeholder{color:var(--soft);font-size:13px}
+.detail .tag{display:inline-block;margin-bottom:4px}
+.detail h1{font-size:clamp(40px,4.5vw,56px);letter-spacing:-1.2px}
+.rating{color:var(--green-dark);font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1.2px}
+.detail>p.muted{font-size:15px;line-height:1.65;max-width:620px}
+.detail-price{margin:20px 0 18px}
+.detail-price .price-stack{display:flex;flex-direction:row;align-items:baseline;gap:10px;flex-wrap:wrap}
+.detail-price .price-mrp{font-size:16px}
+.detail-price .price-sale{font-size:34px;color:var(--green-dark)}
+.detail-price .price-saving{font-size:12px;background:var(--green-tint);padding:5px 9px;border-radius:999px}
+.purchase-heading{display:block;font-size:13px;margin-top:8px}
+.qty{margin:12px 0 18px;gap:14px}
+.qty button{width:40px;height:40px}
+.one-time-actions{display:flex;gap:12px;flex-wrap:wrap}
+.one-time-actions .btn{min-width:142px}
+.actions{margin-top:0}
+.subscription-section{margin-top:28px;padding-top:26px;border-top:1px solid var(--line)}
+.subscription-section-head{margin-bottom:16px}
+.subscription-section-head .eyebrow{font-size:10px}
+.subscription-section-head h3{font-size:25px;line-height:1.2}
+.subscription-section-head p{font-size:13px}
+.subscription-plan-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+.subscription-plan-block{min-height:174px;border-radius:16px;padding:16px;background:#fff}
+.subscription-plan-block:hover{transform:translateY(-2px)}
+.subscription-plan-top strong{font-size:15px}
+.subscription-plan-arrow{width:28px;height:28px;font-size:13px}
+.subscription-plan-frequency{font-size:10px}
+.subscription-plan-price{font-size:23px}
+.subscription-plan-price small{font-size:11px}
+.subscription-plan-meta{line-height:1.45}
+.subscription-plan-cta{margin-top:auto;padding-top:7px}
+.detail-info{margin-top:30px}
+.detail-info div{padding:15px 0}
+@media(max-width:1000px){.product-detail{grid-template-columns:1fr;gap:34px}.detail-art{min-height:500px}}
+@media(max-width:700px){.detail-art{min-height:380px;border-radius:22px}.detail h1{font-size:40px}.detail-price .price-sale{font-size:30px}.subscription-plan-grid{grid-template-columns:1fr}.one-time-actions .btn{flex:1;min-width:0}}
+
+/* Product detail purchase + subscription sheet UX */
+.one-time-purchase{margin-top:10px}
+.one-time-purchase .purchase-heading{font-size:12px;font-weight:700;color:var(--soft);margin:0 0 8px}
+.product-cart-control{min-height:42px}
+.cart-add-button{min-width:92px;height:42px;border-radius:999px;padding:0 20px;font-weight:700}
+.cart-quantity-control{display:inline-flex;align-items:center;height:42px;border:1px solid var(--line);border-radius:999px;background:#fff;overflow:hidden}
+.cart-quantity-control strong{min-width:42px;text-align:center;font-size:14px}
+.cart-quantity-btn{width:42px;height:42px;border:0;background:transparent;color:var(--ink);font-size:18px;font-weight:700;cursor:pointer;display:grid;place-items:center}
+.cart-quantity-btn:hover{background:var(--green-tint);color:var(--green-dark)}
+.buy-now-button{margin-top:9px;min-width:92px;height:42px;border-radius:999px;font-weight:700}
+.sticky-subscribe-trigger{width:100%;margin-top:16px;display:flex;align-items:center;gap:12px;padding:13px 16px;border:1px solid var(--green-dark);border-radius:14px;background:var(--green-dark);color:#fff;cursor:pointer;text-align:left;box-shadow:0 8px 20px rgba(71,47,22,.10)}
+.sticky-subscribe-trigger:hover{background:var(--green);border-color:var(--green);transform:translateY(-1px)}
+.sticky-subscribe-icon{width:34px;height:34px;border-radius:10px;background:rgba(255,255,255,.14);display:grid;place-items:center;font-size:17px;flex:0 0 34px}
+.sticky-subscribe-trigger>span:nth-child(2){display:flex;flex-direction:column;gap:2px;min-width:0;flex:1}
+.sticky-subscribe-trigger strong{font-size:14px;line-height:1.2}
+.sticky-subscribe-trigger small{font-size:11px;opacity:.88;line-height:1.3}
+.sticky-subscribe-arrow{font-size:25px;line-height:1;font-weight:300}
+.subscribe-backdrop{position:fixed;inset:0;background:rgba(20,25,18,.58);z-index:1000;opacity:1}
+.subscribe-sheet{position:fixed;left:50%;bottom:0;transform:translateX(-50%);width:min(920px,calc(100% - 32px));max-height:min(88vh,760px);overflow:auto;background:#fff;border-radius:24px 24px 0 0;z-index:1001;box-shadow:0 -18px 55px rgba(0,0,0,.24);padding:10px 20px 20px;color:var(--ink)}
+.subscribe-sheet-handle{width:42px;height:5px;border-radius:99px;background:#c9c4bb;margin:4px auto 14px}
+.subscribe-sheet-head{display:flex;align-items:flex-start;justify-content:space-between;gap:18px;padding:0 2px 16px}
+.subscribe-sheet-head .eyebrow{font-size:10px;text-transform:uppercase;letter-spacing:1.1px;color:var(--green-dark);font-weight:800}
+.subscribe-sheet-head h2{margin:3px 0 0;font-size:25px;line-height:1.15}
+.subscribe-sheet-head button{border:0;background:transparent;font-size:28px;line-height:1;cursor:pointer;color:var(--ink);padding:2px 4px}
+.subscribe-product-card{display:grid;grid-template-columns:64px 1fr auto;align-items:center;gap:13px;border:1px solid var(--line);border-radius:16px;padding:12px 14px;margin-bottom:14px;background:#fff}
+.subscribe-product-thumb{width:64px;height:64px;border-radius:12px;background:#f3efe3 center/cover no-repeat}
+.subscribe-product-card strong{font-size:15px}
+.subscribe-product-card p{margin:3px 0 0;color:var(--soft);font-size:12px}
+.subscribe-product-price{text-align:right;font-weight:800;font-size:17px}
+.subscribe-step{border:1px solid var(--line);border-radius:16px;padding:15px;margin-top:10px;background:#fff}
+.subscribe-step-title{display:flex;align-items:flex-start;gap:10px;margin-bottom:12px}
+.subscribe-step-title>span{width:25px;height:25px;border-radius:50%;background:var(--green-dark);color:#fff;display:grid;place-items:center;font-size:12px;font-weight:800;flex:0 0 25px}
+.subscribe-step-title strong{display:block;font-size:14px}
+.subscribe-step-title small{display:block;color:var(--soft);font-size:11px;margin-top:2px}
+.subscribe-plan-grid-modal{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
+.subscribe-plan-option{appearance:none;border:1px solid #d9d4ca;border-radius:14px;background:#fff;text-align:left;padding:14px;cursor:pointer;display:flex;flex-direction:column;gap:6px;color:var(--ink)}
+.subscribe-plan-option:hover{border-color:var(--green)}
+.subscribe-plan-option.active{border:2px solid var(--green);background:#f4faed;padding:13px}
+.subscribe-plan-option strong{font-size:14px}
+.subscribe-plan-option span{font-size:18px;font-weight:800}
+.subscribe-plan-option small{font-size:10px;color:var(--soft);line-height:1.45}
+.modal-quantity-control{display:inline-flex;align-items:center;border:1px solid var(--line);border-radius:999px;overflow:hidden;height:42px}
+.modal-quantity-control button{width:42px;height:42px;border:0;background:#fff;font-size:18px;font-weight:700;cursor:pointer}
+.modal-quantity-control button:hover{background:var(--green-tint);color:var(--green-dark)}
+.modal-quantity-control strong{min-width:42px;text-align:center}
+.subscribe-date-row{display:flex;align-items:center;gap:10px}
+.subscribe-date-row input{height:42px;border:1px solid var(--line);border-radius:10px;padding:0 11px;font:inherit;flex:1}
+.subscribe-date-row span{font-size:11px;color:var(--soft)}
+.subscribe-address{display:block;border:1px solid var(--line);border-radius:16px;padding:14px;margin-top:10px}
+.subscribe-address strong{display:block;font-size:13px;margin-bottom:7px}
+.subscribe-address select{width:100%;height:42px;border:1px solid var(--line);border-radius:10px;background:#fff;padding:0 10px;font:inherit}
+.subscribe-warning{margin-top:10px;border-radius:14px;padding:12px;background:#fff4e8;color:#8a5100;font-size:12px}
+.subscribe-benefit{display:flex;flex-direction:column;gap:3px;margin-top:10px;border-radius:14px;padding:13px 15px;background:var(--green-tint);color:var(--green-dark)}
+.subscribe-benefit strong{font-size:13px}.subscribe-benefit span{font-size:11px;color:var(--soft)}
+.subscribe-now-button{width:100%;height:48px;border-radius:12px;margin-top:12px;font-weight:800;font-size:14px}
+body.subscribe-sheet-open{overflow:hidden}
+@media(max-width:700px){
+  .one-time-purchase{margin-top:8px}
+  .buy-now-button{width:100%;margin-top:8px}
+  .sticky-subscribe-trigger{position:fixed;left:12px;right:12px;bottom:12px;width:auto;margin:0;z-index:999;padding:12px 14px;border-radius:16px}
+  .subscribe-sheet{width:100%;max-height:92vh;border-radius:22px 22px 0 0;padding:9px 14px calc(18px + env(safe-area-inset-bottom))}
+  .subscribe-sheet-head h2{font-size:21px}
+  .subscribe-product-card{grid-template-columns:54px 1fr auto}.subscribe-product-thumb{width:54px;height:54px}
+  .subscribe-plan-grid-modal{grid-template-columns:1fr}
+  .subscribe-plan-option span{font-size:17px}
+  .subscribe-date-row{flex-direction:column;align-items:stretch}.subscribe-date-row span{display:none}
+}
+
+/* UAT_FIX_PHASE_2_FIX: subscription entry is a true viewport-floating action. */
+.sticky-subscribe-trigger{position:fixed!important;right:32px;bottom:32px;width:auto!important;min-width:245px;max-width:320px;margin:0!important;z-index:999!important;background:var(--orange)!important;border-color:var(--orange)!important;color:#fff!important;box-shadow:0 14px 32px rgba(195,111,26,.28)!important}
+.sticky-subscribe-trigger:hover{background:var(--orange-dark)!important;border-color:var(--orange-dark)!important}
+.subscribe-sheet{left:0!important;right:0!important;bottom:0!important;transform:none!important;width:100vw!important;max-width:none!important;max-height:min(88vh,760px);overflow:auto;padding:0 28px 28px!important;border-radius:24px 24px 0 0!important}
+.subscribe-sheet-handle{margin-top:10px!important}
+.subscribe-sheet-head{position:sticky;top:0;z-index:5;background:#fff;padding:14px 2px 16px!important;border-bottom:1px solid var(--line);margin-bottom:14px}
+.subscribe-sheet-head h2{margin:3px 0 0!important;font-size:25px;line-height:1.15}
+.subscribe-sheet-head p{margin:2px 0 0;color:var(--soft);font-size:12px}
+.subscribe-address{display:none!important}
+.subscribe-now-button{background:var(--orange)!important}
+@media(max-width:700px){
+  .sticky-subscribe-trigger{left:12px!important;right:12px!important;bottom:12px!important;width:auto!important;min-width:0;max-width:none}
+  .subscribe-sheet{padding:0 14px calc(18px + env(safe-area-inset-bottom))!important;max-height:92vh}
+}
+
+/* UAT_FIX_PHASE_2_FIX: subscription checkout */
+.subscription-checkout-grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(280px,.45fr);gap:36px;align-items:start}
+.subscription-checkout-product{display:grid;grid-template-columns:72px 1fr auto;gap:14px;align-items:center;border:1px solid var(--line);border-radius:16px;background:#fff;padding:12px 14px;margin:18px 0}
+.subscription-checkout-thumb{width:72px;height:72px;border-radius:12px;background:#f3efe3 center/cover no-repeat}
+.subscription-checkout-product strong{font-size:15px}.subscription-checkout-product p{margin:2px 0 0;color:var(--soft);font-size:12px}
+.subscription-checkout-card{border:1px solid var(--line);border-radius:16px;background:#fff;padding:16px}.subscription-checkout-card h3{margin:0 0 8px}
+.subscription-address-preview{margin-top:8px;padding:12px 14px;border:1px solid var(--line);border-radius:12px;background:var(--paper);font-size:13px}
+.subscription-checkout-submit{width:100%;margin-top:4px}.subscription-checkout-submit:disabled{opacity:.55;cursor:not-allowed}
+@media(max-width:800px){.subscription-checkout-grid{grid-template-columns:1fr}.subscription-checkout-product{grid-template-columns:56px 1fr}.subscription-checkout-product>strong{grid-column:2}.subscription-checkout-thumb{width:56px;height:56px}}
+
+/* UAT_FIX_PHASE_2_FIX: one-time quantity control iconography. */
+.cart-quantity-btn.remove{color:var(--brown-dark)}
+.cart-trash-icon{width:15px;height:15px;display:block;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+
+/* UAT_FIX_PHASE_6 — unified mixed cart */
+.cart-section h3{margin:0 0 12px;text-transform:uppercase;letter-spacing:.08em;font-size:12px;color:var(--muted)}
+.cart-remove,.cart-edit{margin-top:8px;background:none;border:0;padding:0;cursor:pointer;text-decoration:underline;font-size:12px;margin-right:12px}
+.checkout-address-preview{background:#faf7f1;border:1px solid #ddd2be;border-radius:14px;padding:13px;margin:8px 0 16px;font-size:13px}
+.checkout-new-address{background:#faf7f1;border:1px solid #ddd2be;border-radius:14px;padding:16px;margin:0 0 16px}
+.checkout-new-address>strong{display:block;margin-bottom:12px}

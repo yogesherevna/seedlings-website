@@ -1,7 +1,8 @@
 import { collection, doc, getDoc, getDocs, query, serverTimestamp, updateDoc, where, writeBatch } from 'firebase/firestore';
 import { db } from './firebase';
-import { isSubscriptionEligible, type SalesProduct } from './salesProducts';
+import { type SalesProduct } from './salesProducts';
 import { checkProductAvailability, nextWeekSaturday } from './customerOrderAvailability';
+import { calculateCheckoutDeliveryCharges } from './deliveryCharges';
 
 const clean = (value: unknown) => typeof value === 'string' ? value.trim() : '';
 const mobileOf = (value: unknown) => String(value ?? '').replace(/\D/g, '').slice(-10);
@@ -13,6 +14,8 @@ export type CustomerSubscriptionPlan = {
   price?: number;
   deliveriesPerTerm?: number;
   description?: string;
+  deliveryChargeMode?: 'included' | 'per_delivery' | 'free' | string;
+  deliveryCharge?: number;
   active?: boolean;
   productIds?: string[];
   salesProductIds?: string[];
@@ -43,7 +46,7 @@ export async function createCustomerSubscription(input: {
 }) {
   const mobile = mobileOf(input.mobile);
   if (mobile.length !== 10) throw new Error('Invalid customer mobile number.');
-  if (input.product.active !== true || input.product.subscriptionPurchase !== true || !isSubscriptionEligible(input.product)) throw new Error('This product is not currently available for subscription.');
+  if (input.product.active !== true) throw new Error('This product is not currently available for subscription.');
   if (!input.planId) throw new Error('Choose a subscription plan.');
   if (!Number.isInteger(input.quantity) || input.quantity < 1) throw new Error('Quantity must be at least 1.');
 
@@ -96,7 +99,7 @@ export async function createCustomerSubscription(input: {
     throw new Error('HARVEST_SHORTAGE_CONFIRMATION_REQUIRED');
   }
 
-  const subscription = {
+  const subscription: Record<string, unknown> = {
     subscriptionNumber,
     customerId: mobile,
     customerName: clean(customer.name) || 'Unnamed customer',
@@ -128,7 +131,17 @@ export async function createCustomerSubscription(input: {
     updatedAt: serverTimestamp(),
   };
 
+  const deliveryCharges = await calculateCheckoutDeliveryCharges({
+    pincode: String((address as Record<string, unknown>).pincode || ''),
+    oneTime: false,
+    subscriptions: [{ planId: input.planId, planName: clean(plan.name) || frequency }],
+  });
+  const delivery = deliveryCharges.subscriptions[0];
+  const deliveryFee = delivery?.finalCharge || 0;
   const total = unitPrice * input.quantity;
+  subscription.deliveryFeePerDelivery = deliveryFee;
+  subscription.deliveryChargeDetails = delivery?.snapshot || {};
+
   const order = {
     orderNumber,
     customerId: mobile,
@@ -148,9 +161,9 @@ export async function createCustomerSubscription(input: {
       imageUrl: clean(input.product.imageUrl),
     }],
     subtotal: total,
-    deliveryFee: 0,
+    deliveryFee,
     discount: 0,
-    total,
+    total: total + deliveryFee,
     currency: 'INR',
     paymentStatus: 'pending',
     paymentMethod: 'online',
@@ -165,9 +178,10 @@ export async function createCustomerSubscription(input: {
     subscriptionPlanId: input.planId,
     subscriptionPlanName: clean(plan.name) || frequency,
     subscriptionFrequency: frequency,
-    deliveryChargeId: '',
-    deliveryChargeName: '',
-    deliveryChargeSnapshot: 0,
+    deliveryChargeId: delivery?.sourceId || '',
+    deliveryChargeName: delivery?.sourceName || '',
+    deliveryChargeSnapshot: deliveryFee,
+    deliveryChargeDetails: delivery?.snapshot || {},
     packingStatus: 'pending',
     requiresCustomerContact: input.shortageDecision === 'contact',
     availabilityRequestedGrams: availability.requestedGrams,

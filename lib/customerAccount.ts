@@ -83,6 +83,17 @@ export async function getCustomerAccount(mobile: string, options?: { bypassCache
   return account;
 }
 
+export async function updateCustomerName(mobile: string, name: string) {
+  const cleanedName = name.trim();
+  if (!cleanedName) throw new Error('Customer name is required.');
+  const ref = doc(db, 'customers', mobile);
+  await updateDoc(ref, {
+    name: cleanedName,
+    updatedAt: serverTimestamp(),
+  });
+  clearCustomerAccountCache(mobile);
+}
+
 export async function updateCustomerProfile(mobile: string, name: string, email: string, preferredDeliveryDay = 'Saturday') {
   const ref = doc(db, 'customers', mobile);
   await updateDoc(ref, {

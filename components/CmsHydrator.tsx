@@ -19,6 +19,26 @@ const applySeo = (title: unknown, description: unknown) => {
 };
 const esc = (value: unknown) => String(value ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\"/g,'&quot;').replace(/'/g,'&#39;');
 
+const isPlaceholderRichText = (value: string) => ['dsds', 'dssd', 'test', 'test description'].includes(value.trim().toLowerCase());
+const richTextHtml = (value: string | undefined, fallback = '') => {
+  const source = value?.trim() || '';
+  if (!source || isPlaceholderRichText(source)) return fallback ? esc(fallback) : '';
+  const template = document.createElement('template');
+  template.innerHTML = source;
+  const allowedTags = new Set(['P','BR','STRONG','B','EM','I','U','S','UL','OL','LI','A','H2','H3','H4','BLOCKQUOTE','DIV','SPAN']);
+  template.content.querySelectorAll('*').forEach((node) => {
+    const element = node as HTMLElement;
+    if (!allowedTags.has(element.tagName)) { element.replaceWith(...Array.from(element.childNodes)); return; }
+    Array.from(element.attributes).forEach((attribute) => {
+      const name = attribute.name.toLowerCase();
+      const attributeValue = attribute.value;
+      if (name.startsWith('on') || name === 'style' || name === 'src' || name === 'srcset' || (name === 'href' && /^\s*javascript:/i.test(attributeValue))) element.removeAttribute(attribute.name);
+    });
+    if (element.tagName === 'A' && element.getAttribute('href')) { element.setAttribute('target', '_blank'); element.setAttribute('rel', 'noopener noreferrer'); }
+  });
+  return template.innerHTML;
+};
+
 const money = (value: number, currency = 'INR') => { try { return new Intl.NumberFormat('en-IN', { style: 'currency', currency, maximumFractionDigits: 0 }).format(value); } catch { return `₹${value}`; } };
 
 const TESTIMONIAL_CACHE_KEY = 'seedlings-cms-testimonials-v1';
@@ -39,7 +59,7 @@ function featuredProductMarkup(items: FeaturedProduct[]) {
         : `<span class=\"price-stack\"><strong class=\"price-sale\">${esc(money(price, currency))}</strong></span>`)
       : 'Freshly grown';
     const slug = encodeURIComponent(productSlug(x));
-    return `<article class=\"card\"><a href=\"/product/${slug}\" aria-label=\"View ${esc(x.name)}\"><div class=\"product-art${imageUrl ? ' has-image' : ''}\"${imageUrl ? ` style=\"background-image:url('${esc(imageUrl)}');background-size:cover;background-position:center;\"` : ''}><span class=\"badge\">Featured</span></div></a><div class=\"product-body\"><span class=\"tag\">${esc(x.category || (x.type === 'multiple' ? 'Salable combo' : 'Microgreen'))}</span><h3>${esc(x.name)}</h3><p>${esc(x.shortDescription || x.description || '')}</p><div class=\"product-foot\"><span class=\"price\">${priceMarkup}</span><a class=\"mini\" href=\"/product/${slug}\">View details</a></div></div></article>`;
+    return `<article class=\"card\"><a href=\"/product/${slug}\" aria-label=\"View ${esc(x.name)}\"><div class=\"product-art${imageUrl ? ' has-image' : ''}\"${imageUrl ? ` style=\"background-image:url('${esc(imageUrl)}');background-size:cover;background-position:center;\"` : ''}><span class=\"badge\">Featured</span></div></a><div class=\"product-body\"><span class=\"tag\">${esc(x.category || (x.type === 'multiple' ? 'Salable combo' : 'Microgreen'))}</span><h3>${esc(x.name)}</h3><div class="product-card-description rich-text">${richTextHtml(typeof x.shortDescription === 'string' && x.shortDescription.trim() ? x.shortDescription : (typeof x.description === 'string' ? x.description : ''))}</div><div class=\"product-foot\"><span class=\"price\">${priceMarkup}</span><a class=\"mini\" href=\"/product/${slug}\">View details</a></div></div></article>`;
   }).join('');
 }
 
@@ -79,7 +99,7 @@ const STATIC_FAQS = [
 
 const STATIC_TESTIMONIALS = [
   { customerName: 'Priya Sharma', rating: 5, content: 'The microgreens are always fresh, crisp, and packed really well. They have become a regular part of our meals.' },
-  { customerName: 'Rahul Deshmukh', rating: 5, content: 'I love the freshness and quality. The greens arrive looking just like they were harvested that day.' },
+  { customerName: 'A customer', rating: 5, content: 'I love the freshness and quality. The greens arrive looking just like they were harvested that day.' },
   { customerName: 'Sneha Kulkarni', rating: 5, content: 'The sunflower and broccoli microgreens are my favourites. Great quality and really convenient for everyday meals.' },
   { customerName: 'Amit Patil', rating: 4, content: 'Very fresh microgreens and good variety. I have been enjoying adding them to salads, sandwiches, and breakfast.' },
   { customerName: 'Neha Joshi', rating: 5, content: 'Excellent quality and timely delivery. The microgreens make even a simple home-cooked meal feel special.' },
