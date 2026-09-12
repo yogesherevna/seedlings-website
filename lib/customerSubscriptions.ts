@@ -24,21 +24,12 @@ function dateOnly(date: Date) {
 
 function nextSaturday(_startDate?: string) { return nextWeekSaturday(); }
 
-export async function loadActiveCustomerSubscriptionPlans(productId?: string): Promise<CustomerSubscriptionPlan[]> {
+export async function loadActiveCustomerSubscriptionPlans(_productId?: string): Promise<CustomerSubscriptionPlan[]> {
   const snapshot = await getDocs(query(collection(db, 'subscriptionPlans'), where('active', '==', true)));
+  // Admin subscription plans are global masters, not product-wise assignments.
   return snapshot.docs
     .map((item) => ({ id: item.id, ...(item.data() as Record<string, unknown>) }) as CustomerSubscriptionPlan)
-    .filter((plan) => ['monthly', 'quarterly'].includes(String(plan.frequency || '').toLowerCase()))
-    .filter((plan) => {
-      if (!productId) return true;
-      const configuredIds = [
-        ...(Array.isArray(plan.productIds) ? plan.productIds : []),
-        ...(Array.isArray(plan.salesProductIds) ? plan.salesProductIds : []),
-      ].map(String);
-      // Current master plans are global. If a future plan has explicit product IDs,
-      // honor them instead of showing that plan for every product.
-      return configuredIds.length === 0 || configuredIds.includes(productId);
-    });
+    .filter((plan) => Number(plan.price ?? 0) >= 0);
 }
 
 export async function createCustomerSubscription(input: {
@@ -52,7 +43,7 @@ export async function createCustomerSubscription(input: {
 }) {
   const mobile = mobileOf(input.mobile);
   if (mobile.length !== 10) throw new Error('Invalid customer mobile number.');
-  if (!isSubscriptionEligible(input.product)) throw new Error('This product is not currently available for subscription.');
+  if (input.product.active !== true || input.product.subscriptionPurchase !== true || !isSubscriptionEligible(input.product)) throw new Error('This product is not currently available for subscription.');
   if (!input.planId) throw new Error('Choose a subscription plan.');
   if (!Number.isInteger(input.quantity) || input.quantity < 1) throw new Error('Quantity must be at least 1.');
 
@@ -67,7 +58,7 @@ export async function createCustomerSubscription(input: {
 
   const plan = planSnap.data() || {};
   const frequency = clean(plan.frequency).toLowerCase();
-  if (plan.active !== true || !['monthly', 'quarterly'].includes(frequency)) throw new Error('This subscription plan is not active.');
+  if (plan.active !== true || !['monthly', 'quarterly', 'half_yearly', 'yearly'].includes(frequency)) throw new Error('This subscription plan is not active.');
 
   const addresses = Array.isArray(customer.addresses) ? customer.addresses : [];
   const address = addresses.find((item: Record<string, unknown>) => String(item?.id ?? '') === input.addressId);
@@ -88,7 +79,7 @@ export async function createCustomerSubscription(input: {
     throw new Error('This Salable Product has an invalid pack quantity.');
   }
 
-  const deliveries = frequency === 'monthly' ? 4 : 12;
+  const deliveries = Math.max(1, Number(plan.deliveriesPerTerm || (frequency === 'monthly' ? 4 : frequency === 'quarterly' ? 12 : 1)));
   const firstDelivery = nextSaturday(input.startDate);
   const end = new Date(`${firstDelivery}T00:00:00`);
   end.setDate(end.getDate() + (deliveries - 1) * 7);

@@ -58,7 +58,7 @@ export default function SubscriptionHydrator({ children }: { children: React.Rea
         ]);
         if (dead) return;
 
-        const plans = plansSnapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() })).filter((p: any) => ["monthly", "quarterly"].includes(String(p.frequency)));
+        const plans = plansSnapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() })).filter((p: any) => p.active === true && Number(p.price ?? 0) >= 0);
         const subs = subsSnapshot.docs
           .map((doc) => ({ id: doc.id, ...(doc.data() as Record<string, unknown>) }))
           .filter((subscription: any) => String(subscription.customerId ?? '').replace(/\D/g, '') === mobile) as any[];
@@ -68,7 +68,7 @@ export default function SubscriptionHydrator({ children }: { children: React.Rea
 
         if (selectedProduct) {
           const product = salesProducts.find((p) => p.id === String(selectedProduct.productId));
-          if (!product || !isSubscriptionEligible(product)) {
+          if (!product || product.active !== true || product.subscriptionPurchase !== true || !isSubscriptionEligible(product)) {
             sessionStorage.removeItem("seedlings_subscription_product");
             sessionStorage.removeItem("seedlings_subscription_plan");
             selectedProduct = null;
@@ -91,7 +91,7 @@ export default function SubscriptionHydrator({ children }: { children: React.Rea
           ${addresses.length ? `<label>Delivery address<select data-address>${addresses.map((a: any) => `<option value="${esc(a.id || "")}">${esc(a.label || "Address")} — ${esc(addressText(a))}</option>`).join("")}</select></label>` : `<p class="muted">Add a delivery address before creating a subscription.</p>`}
           <label style="margin-top:12px">Packs per delivery<input data-quantity type="number" min="1" step="1" value="${Math.max(1, Number(selectedProduct.quantity || 1))}"></label>
           <label style="margin-top:12px">Start date<input data-start type="date" value="${new Date().toISOString().slice(0,10)}"></label>
-          <p class="muted" style="font-size:12px;margin-top:10px">Delivery is Saturday (${nextWeekSaturday()}). Monthly and Quarterly are the configured customer subscription plans.</p>
+          <p class="muted" style="font-size:12px;margin-top:10px">Delivery is Saturday (${nextWeekSaturday()}). Subscription plans and pricing are configured in the Subscription Plan Master.</p>
           <button class="btn primary" data-create type="button" style="margin-top:12px" ${addresses.length ? "" : "disabled"}>Create Subscription</button>
         </div>` : "";
 

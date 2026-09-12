@@ -137,16 +137,36 @@ type SubscriptionPlan = {
   frequency?: string;
   price?: number;
   deliveriesPerTerm?: number | string;
+  deliveryChargeMode?: 'included' | 'per_delivery' | 'free' | string;
+  deliveryCharge?: number;
+  description?: string;
   active?: boolean;
 };
 
 async function loadActiveSubscriptionPlans(): Promise<SubscriptionPlan[]> {
-  const snapshot = await getDocsFromServer(
-    query(collection(db, 'subscriptionPlans'), where('active', '==', true)),
-  );
+  const snapshot = await getDocsFromServer(query(collection(db, 'subscriptionPlans'), where('active', '==', true)));
+  // Admin defines subscription plans as global masters; they are not product-wise.
   return snapshot.docs
     .map((doc) => ({ id: doc.id, ...doc.data() }) as SubscriptionPlan)
-    .filter((plan) => plan.active === true && ['monthly', 'quarterly'].includes(String(plan.frequency).toLowerCase()));
+    .filter((plan) => plan.active === true && Number(plan.price ?? 0) >= 0);
+}
+
+function subscriptionFrequencyLabel(value: unknown) {
+  const raw = String(value ?? '').trim().toLowerCase();
+  if (!raw) return 'Subscription';
+  return raw.split(/[_\s-]+/).map((part) => part.charAt(0).toUpperCase() + part.slice(1)).join(' ');
+}
+
+function subscriptionPlanMarkup(plans: SubscriptionPlan[]) {
+  if (!plans.length) return '';
+  return `<div class="subscription-section"><div class="subscription-section-head"><span class="eyebrow">Subscribe & save</span><h3>Subscription plans</h3><p class="muted">Choose any active Seedlings subscription plan.</p></div><div class="subscription-plan-grid">${plans.map((plan) => {
+    const price = Number(plan.price ?? 0);
+    const deliveries = Number(plan.deliveriesPerTerm ?? 0);
+    const deliveryText = deliveries > 0 ? `${deliveries} ${deliveries === 1 ? 'delivery' : 'deliveries'} / term` : 'Ongoing deliveries';
+    const deliveryCharge = Number(plan.deliveryCharge ?? 0);
+    const chargeText = plan.deliveryChargeMode === 'per_delivery' && deliveryCharge > 0 ? `+ ${money(deliveryCharge)} / delivery` : 'Delivery included';
+    return `<button class="subscription-plan-block" type="button" data-subscription-plan="${esc(plan.id)}" aria-label="Choose ${esc(plan.name || subscriptionFrequencyLabel(plan.frequency))} subscription"><span class="subscription-plan-top"><strong>${esc(plan.name || subscriptionFrequencyLabel(plan.frequency))}</strong><span class="subscription-plan-arrow">→</span></span><span class="subscription-plan-frequency">${esc(subscriptionFrequencyLabel(plan.frequency))}</span><span class="subscription-plan-price">${esc(money(price))}<small> / term</small></span><span class="subscription-plan-meta">${esc(deliveryText)} · ${esc(chargeText)}</span>${plan.description ? `<span class="subscription-plan-description">${esc(plan.description)}</span>` : ''}<span class="subscription-plan-cta">Start subscription</span></button>`;
+  }).join('')}</div></div>`;
 }
 
 async function applyProduct(root: HTMLElement, products: SalesProduct[], slug: string) {
@@ -189,24 +209,14 @@ async function applyProduct(root: HTMLElement, products: SalesProduct[], slug: s
   const choose = chips?.previousElementSibling;
   const productSubscriptionEligible = isSubscriptionEligible(product);
   let plans: SubscriptionPlan[] = [];
-  if (productSubscriptionEligible) {
-    try {
-      plans = await loadActiveSubscriptionPlans();
-    } catch (error) {
-      console.warn('Subscription plans could not be loaded from website Firebase', error);
-    }
+  if (productSubscriptionEligible && product.subscriptionPurchase === true) {
+    try { plans = await loadActiveSubscriptionPlans(); }
+    catch (error) { console.warn('Subscription plans could not be loaded from website Firebase', error); }
   }
-  const subscriptionAvailable = productSubscriptionEligible && plans.length > 0;
+  const subscriptionAvailable = productSubscriptionEligible && product.subscriptionPurchase === true && plans.length > 0;
   const oneTimeAvailable = Boolean(product.oneTimePurchase);
-  if (chips) {
-    const options: string[] = [];
-    if (oneTimeAvailable) options.push('One-time purchase');
-    if (subscriptionAvailable) options.push('Subscribe');
-    chips.innerHTML = options.length
-      ? options.map((label, i) => `<button class=\"chip purchase-option${i === 0 ? ' active' : ''}\" data-purchase-option=\"${label === 'Subscribe' ? 'subscription' : 'one-time'}\" type=\"button\">${esc(label)}</button>`).join('')
-      : '<span class=\"chip active\">Unavailable</span>';
-    if (choose) choose.textContent = options.length > 1 ? 'Choose purchase option' : 'Purchase option';
-  }
+  if (chips) chips.remove();
+  if (choose) choose.textContent = subscriptionAvailable ? 'Purchase options' : 'Purchase';
 
   const info = root.querySelector('.detail-info');
   if (info) {
@@ -216,94 +226,52 @@ async function applyProduct(root: HTMLElement, products: SalesProduct[], slug: s
   const actions = root.querySelector('.actions');
   if (actions) {
     actions.innerHTML =
-      (oneTimeAvailable ? '<button class=\"btn primary\" data-add-cart type=\"button\">Add to cart</button><button class=\"btn outline\" data-buy-now type=\"button\">Buy now</button>' : '') +
-      (subscriptionAvailable ? '<div class=\"subscription-picker\" data-subscription-picker hidden><label for=\"subscription-plan\">Choose subscription</label><select id=\"subscription-plan\" data-subscription-plan><option value=\"\">Select a subscription</option></select></div><button class=\"btn outline subscription-action\" data-subscribe type=\"button\" hidden disabled>Subscribe</button>' : '');
+      (oneTimeAvailable ? '<button class="btn primary" data-add-cart type="button">Add to cart</button><button class="btn outline buy-now-button" data-buy-now type="button">Buy now</button>' : '') +
+      (subscriptionAvailable ? subscriptionPlanMarkup(plans) : '');
 
     const qtyEl = root.querySelector('#qty') as HTMLElement | null;
     const existingCartItem = getCart().find((item) => item.productId === product.id);
     const initialCartQuantity = existingCartItem?.quantity || 1;
     const getQty = () => Math.max(1, Number(qtyEl?.textContent || '1'));
-    const setQty = (next: number) => {
-      if (!qtyEl) return;
-      qtyEl.textContent = String(Math.max(1, Math.floor(Number.isFinite(next) ? next : 1)));
-    };
-    // The details-page quantity represents the current cart quantity for this product.
-    // This prevents a stale UI value (1) from being added on top of an existing cart quantity.
+    const setQty = (next: number) => { if (qtyEl) qtyEl.textContent = String(Math.max(1, Math.floor(Number.isFinite(next) ? next : 1))); };
     setQty(initialCartQuantity);
     const minusButton = root.querySelector('[data-minus="#qty"]') as HTMLButtonElement | null;
     const plusButton = root.querySelector('[data-plus="#qty"]') as HTMLButtonElement | null;
-    // PrototypePage strips the original script.js, so wire quantity controls here.
-    // Use onclick assignment (instead of addEventListener) because the product is
-    // rendered once from cache and once again after the background refresh.
     if (minusButton) minusButton.onclick = () => setQty(getQty() - 1);
     if (plusButton) plusButton.onclick = () => setQty(getQty() + 1);
+
     const addButton = actions.querySelector('[data-add-cart]') as HTMLButtonElement | null;
     const buyButton = actions.querySelector('[data-buy-now]') as HTMLButtonElement | null;
-    const subscribeButton = actions.querySelector('[data-subscribe]') as HTMLButtonElement | null;
-    const planSelect = actions.querySelector('[data-subscription-plan]') as HTMLSelectElement | null;
-    const planPicker = actions.querySelector('[data-subscription-picker]') as HTMLElement | null;
-
-    const add = (goCart: boolean) => {
+    const addToCartForQuantity = () => {
       const quantity = getQty();
       const currentCartItem = getCart().find((item) => item.productId === product.id);
-      if (currentCartItem) {
-        // Existing cart item: the details-page quantity is the desired final quantity,
-        // not an additional quantity to add.
-        setCartQuantity(product.id, quantity);
-      } else {
-        addToCart({ productId: product.id, slug: slugFor(product), name: product.name, price: Number(product.sellingPrice ?? 0), mrp: Number(product.mrp ?? product.sellingPrice ?? 0), currency: product.currency || 'INR', imageUrl: product.imageUrl }, quantity);
-      }
-      if (addButton) {
-        addButton.textContent = goCart ? 'Added' : 'Added to cart';
-        addButton.disabled = true;
-        window.setTimeout(() => {
-          if (addButton) { addButton.textContent = 'Add to cart'; addButton.disabled = false; }
-        }, 900);
-      }
-      if (goCart) window.location.href = '/cart';
+      if (currentCartItem) setCartQuantity(product.id, quantity);
+      else addToCart({ productId: product.id, slug: slugFor(product), name: product.name, price: Number(product.sellingPrice ?? 0), mrp: Number(product.mrp ?? product.sellingPrice ?? 0), currency: product.currency || 'INR', imageUrl: product.imageUrl }, quantity);
     };
 
-    const setPurchaseMode = (mode: 'one-time' | 'subscription') => {
-      root.querySelectorAll<HTMLButtonElement>('[data-purchase-option]').forEach((button) => {
-        button.classList.toggle('active', button.dataset.purchaseOption === mode);
+    addButton?.addEventListener('click', () => {
+      addToCartForQuantity();
+      addButton.textContent = 'Added to cart';
+      addButton.disabled = true;
+      window.setTimeout(() => { addButton.textContent = 'Add to cart'; addButton.disabled = false; }, 900);
+    });
+
+    buyButton?.addEventListener('click', () => {
+      addToCartForQuantity();
+      window.location.href = '/checkout';
+    });
+
+    actions.querySelectorAll<HTMLButtonElement>('[data-subscription-plan]').forEach((button) => {
+      button.addEventListener('click', () => {
+        const planId = button.dataset.subscriptionPlan || '';
+        if (!planId) return;
+        sessionStorage.setItem('seedlings_subscription_product', JSON.stringify({ productId: product.id, name: product.name, quantity: getQty() }));
+        sessionStorage.setItem('seedlings_subscription_plan', planId);
+        window.location.href = '/subscriptions';
       });
-      const isSubscription = mode === 'subscription';
-      if (planPicker) planPicker.hidden = !isSubscription;
-      if (subscribeButton) subscribeButton.hidden = !isSubscription;
-      if (isSubscription && planSelect) {
-        planSelect.disabled = false;
-        if (plans.length && planSelect.options.length <= 1) {
-          planSelect.innerHTML = '<option value="">Select a subscription</option>' + plans.map((plan) => {
-            const frequency = String(plan.frequency || '').replace(/^./, (c) => c.toUpperCase());
-            const price = Number(plan.price || 0).toLocaleString('en-IN');
-            const deliveries = plan.deliveriesPerTerm ? ` · ${esc(plan.deliveriesPerTerm)} deliveries` : '';
-            return `<option value="${esc(plan.id)}">${esc(plan.name || frequency)} — ₹${price}${deliveries}</option>`;
-          }).join('');
-        }
-      }
-    };
-
-
-    root.querySelectorAll<HTMLButtonElement>('[data-purchase-option]').forEach((button) => {
-      button.addEventListener('click', () => setPurchaseMode(button.dataset.purchaseOption === 'subscription' ? 'subscription' : 'one-time'));
     });
-
-    addButton?.addEventListener('click', () => add(false));
-    buyButton?.addEventListener('click', () => add(true));
-    planSelect?.addEventListener('change', () => {
-      if (subscribeButton) subscribeButton.disabled = !planSelect.value;
-    });
-    subscribeButton?.addEventListener('click', () => {
-      const planId = planSelect?.value || '';
-      if (!planId) return;
-      sessionStorage.setItem('seedlings_subscription_product', JSON.stringify({ productId: product.id, name: product.name, quantity: getQty() }));
-      sessionStorage.setItem('seedlings_subscription_plan', planId);
-      window.location.href = '/subscriptions';
-    });
-
-    // Default to one-time when available; otherwise open subscription mode.
-    setPurchaseMode(oneTimeAvailable ? 'one-time' : 'subscription');
   }
+
 }
 
 export default function CatalogueHydrator({ page, slug, children }: { page: Page; slug?: string; children: ReactNode }) {
