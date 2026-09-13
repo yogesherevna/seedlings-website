@@ -15,7 +15,10 @@ import { calculateCheckoutDeliveryCharges, type CheckoutDeliveryCharges } from '
 const KEY='seedlings_checkout_details';
 const esc=(v:unknown)=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]!));
 const money=(v:number,c='INR')=>{try{return new Intl.NumberFormat('en-IN',{style:'currency',currency:c,maximumFractionDigits:0}).format(v)}catch{return `₹${v}`}};
-const addressText=(a:CustomerAddress)=>[a.addressLine1,a.addressLine2,a.landmark,a.city,a.state,a.pincode].filter(Boolean).join(', ');
+const addressText=(a:CustomerAddress)=>{
+  const seen=new Set<string>();
+  return [a.addressLine1,a.addressLine2,a.landmark,a.city,a.state,a.pincode].map(v=>String(v??'').trim()).filter(v=>{const k=v.replace(/\s+/g,' ').toLowerCase();if(!k||seen.has(k))return false;seen.add(k);return true;}).join(', ');
+};
 
 export default function CheckoutHydrator({children}:{children:React.ReactNode}){
  useEffect(()=>{const root=document.querySelector('[data-checkout-root]') as HTMLElement|null;if(!root)return;let dead=false;
